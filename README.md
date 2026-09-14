@@ -1,4 +1,4 @@
-# OrganoTale
+# OrganoTale 🫀
 
 A priority-based organ donor and recipient matching platform. Donors pledge an organ once. Treating hospitals verify patients' requests and set their medical priority. OrganoTale then ranks compatible donors and recipients, and the hospital proposes a match that the donor accepts before it is confirmed. Every decision is recorded in an audit log.
 
