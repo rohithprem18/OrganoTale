@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+.vercel/
+.env
+.env*.local
+*.log
+.local/
+
+# Local AI agent skills installed by the Vercel CLI
+.agents/
+.claude/
+skills-lock.json
