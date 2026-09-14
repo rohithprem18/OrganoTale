@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { Combobox, Field } from './components';
 import { STATES } from '../shared/options';
+import { stateFromPincode } from '../shared/pincode';
 import { useT } from './i18n';
 
 const options = STATES.map((s) => ({ value: s, label: s }));
@@ -15,6 +16,14 @@ export function LocationFields({ initial = {}, pinName = 'pincode', required = t
   const revision = useRef(0);
   const container = useRef(null);
   const lastLocation = useRef(`${initial.city || ''}|${initial.state || ''}`);
+  // The postal directory is a third-party service that can be slow or unreachable (for example
+  // from servers outside India). India Post's PIN ranges still identify the state offline.
+  const fillStateOffline = (fallbackMessage) => {
+    const offline = stateFromPincode(pin);
+    if (!offline) { setHint(t(fallbackMessage)); return; }
+    setState(offline);
+    setHint(`${offline}. ${t('Enter your city below.')}`);
+  };
   useEffect(() => {
     let active = true;
     const version = revision.current;
@@ -31,9 +40,15 @@ export function LocationFields({ initial = {}, pinName = 'pincode', required = t
           const found = result.locations[0];
           setCity(found.city); setState(found.state);
           setHint(`${found.city}, ${found.state}. ${t('Check this suggestion before continuing.')}`);
-        } else setHint(t(result.locations.length ? 'Choose your location or enter it below.' : 'PIN not found. Enter your location manually.'));
+        } else if (result.locations.length) {
+          // Several districts share a PIN; when they are all in one state, the state is still certain.
+          const states = [...new Set(result.locations.map((l) => l.state))];
+          if (states.length === 1) setState(states[0]);
+          setHint(t('Choose your location or enter it below.'));
+        }
+        else fillStateOffline('PIN not found. Enter your location manually.');
       } catch {
-        if (active) setHint(t('Location lookup unavailable. Enter your location manually.'));
+        if (active && revision.current === version) fillStateOffline('Location lookup unavailable. Enter your location manually.');
       }
     }, 350);
     return () => { active = false; clearTimeout(timer); };
