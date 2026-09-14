@@ -99,9 +99,6 @@ export function Empty({ title = 'Nothing here yet', children, action }) {
 export function PageHeading({ eyebrow, title, children, action }) {
   return <div className="page-heading"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{children && <p>{children}</p>}</div>{action}</div>;
 }
-export function FormShell({ eyebrow, title, description, children, aside, back = '/dashboard', backLabel = 'Back to dashboard' }) {
-  return <div className="page-container"><Link className="back-link" to={back}><ArrowLeft size={17} /> {backLabel}</Link><PageHeading eyebrow={eyebrow} title={title}>{description}</PageHeading><div className="form-layout"><div className="form-panel">{children}</div><aside className="form-aside"><span className="large-mark"><Heartbeat size={38} /></span><h3>Every journey starts<br />with a little hope.</h3>{aside || <p>Your information helps keep requests and donation records organized in one place.</p>}<div className="aside-bottom">A little of you.<br /><strong>A life for someone.</strong></div></aside></div></div>;
-}
 const STATUS_LABELS = { 'Not Emergency': 'Standard', deceased: 'After death' };
 export function Status({ value, label }) {
   const key = value || 'pending';
@@ -117,7 +114,45 @@ export function NextStep({ icon: Icon, title, body, action, to, onClick, calm = 
   return <section className={`next-step ${calm ? 'calm' : ''}`} aria-label="Your next step"><span className="next-icon"><Icon size={24} /></span><div><span className="eyebrow">Your next step</span><h2>{title}</h2>{body && <p>{body}</p>}</div>{action && (to ? <Link className="button" to={to}>{action}<ArrowRight size={18} /></Link> : <button type="button" className="button" onClick={onClick}>{action}<ArrowRight size={18} /></button>)}</section>;
 }
 
-// ---------- Confirmation dialog ----------
+// ---------- App page layout ----------
+// One-row page header: optional back button, title with a short subtitle, and actions on the right.
+export function AppHeader({ title, subtitle, back, backLabel = 'Back', actions }) {
+  return <header className="app-header">{back && <Link className="icon-button back-button" to={back} aria-label={backLabel}><ArrowLeft size={20} /></Link>}<div className="app-header-text"><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{actions && <div className="app-header-actions">{actions}</div>}</header>;
+}
+// Slim row of counters. Each item: { label, value, icon, to? | onClick? }.
+export function StatStrip({ items }) {
+  return <div className="stat-strip">{items.map(({ label, value, icon: Icon, to, onClick }) => {
+    const inner = <><span className="stat-icon" aria-hidden="true"><Icon size={18} /></span><span className="stat-text"><strong>{value}</strong><span>{label}</span></span></>;
+    if (to) return <Link key={label} className="stat-chip" to={to}>{inner}</Link>;
+    if (onClick) return <button key={label} type="button" className="stat-chip" onClick={onClick}>{inner}</button>;
+    return <div key={label} className="stat-chip">{inner}</div>;
+  })}</div>;
+}
+// A panel. With `scroll`, its body scrolls inside the panel so the page itself stays still.
+export function Box({ title, subtitle, actions, head, children, className = '', bodyClass = '', scroll = false }) {
+  const hasHead = head || title || actions;
+  return <section className={`box ${scroll ? 'scroll' : ''} ${className}`} aria-label={typeof title === 'string' ? title : undefined}>
+    {hasHead && <div className="box-head">{head || <><div className="box-title"><h2>{title}</h2>{subtitle && <small>{subtitle}</small>}</div>{actions}</>}</div>}
+    <div className={`box-body ${bodyClass}`}>{children}</div>
+  </section>;
+}
+// Segmented tabs. tabs: [[key, label, count?]].
+export function Tabs({ tabs, value, onChange, label }) {
+  return <div className="seg" role="tablist" aria-label={label}>{tabs.map(([key, text, count]) => <button key={key} type="button" role="tab" aria-selected={value === key} onClick={() => onChange(key)}>{text}{count != null && <span className="n">{count}</span>}</button>)}</div>;
+}
+export function InlineEmpty({ icon: Icon = Heartbeat, children, action }) {
+  return <div className="inline-empty"><Icon size={18} aria-hidden="true" /><span>{children}</span>{action}</div>;
+}
+// A compact list row. Rows with actions are not links, so buttons never sit inside an anchor.
+export function ListRow({ to, title, meta, status, actions }) {
+  const body = <><span className="row-main"><strong>{title}</strong>{meta && <small>{meta}</small>}</span>{status}{actions}</>;
+  return <li>{to && !actions ? <Link className="row-item" to={to}>{body}</Link> : <div className="row-item">{body}</div>}</li>;
+}
+export function FormShell({ title, description, children, back = '/dashboard', backLabel = 'Back to dashboard' }) {
+  return <div className="screen form-screen"><AppHeader back={back} backLabel={backLabel} title={title} subtitle={description} />{children}</div>;
+}
+
+// ---------- Dialogs ----------
 export function ConfirmButton({ onConfirm, children = 'Delete', title, description = 'This cannot be undone.', confirmLabel = 'Delete', busyLabel = 'Working…', danger = true, success, className }) {
   const dialog = useRef(null);
   const titleId = useId();
@@ -129,6 +164,19 @@ export function ConfirmButton({ onConfirm, children = 'Delete', title, descripti
       <div className="modal-body"><h3 id={titleId}>{title || confirmLabel}</h3><p>{description}</p><Notice>{action.error}</Notice></div>
       <div className="modal-actions"><button type="button" className="button secondary" onClick={close}>Cancel</button><button type="button" className={`button ${danger ? 'danger-button' : ''}`} disabled={action.busy} onClick={() => action.run(async () => { await onConfirm(); close(); }, { success })}>{action.busy ? busyLabel : confirmLabel}</button></div>
     </dialog>
+  </>;
+}
+// A button that asks for a reason in a dialog before calling onSubmit(reason).
+export function ReasonDialogButton({ children, title, description, label = 'Reason', required = true, minLength, confirmLabel, busyLabel = 'Saving…', success, onSubmit, className = 'text-button danger', danger = true }) {
+  const dialog = useRef(null);
+  const titleId = useId();
+  const action = useAsync();
+  return <>
+    <button type="button" className={className} onClick={() => dialog.current?.showModal()}>{children}</button>
+    <dialog ref={dialog} className="modal" aria-labelledby={titleId}><form onSubmit={(e) => { e.preventDefault(); const reason = formValues(e.currentTarget).reason || ''; action.run(async () => { await onSubmit(reason); dialog.current?.close(); }, { success }); }}>
+      <div className="modal-body"><h3 id={titleId}>{title}</h3>{description && <p>{description}</p>}<div className="fields one"><Field label={label} name="reason" multiline required={required} minLength={minLength} wide /></div><Notice>{action.error}</Notice></div>
+      <div className="modal-actions"><button type="button" className="button secondary" onClick={() => dialog.current?.close()}>Cancel</button><button className={`button ${danger ? 'danger-button' : ''}`} disabled={action.busy}>{action.busy ? busyLabel : confirmLabel}</button></div>
+    </form></dialog>
   </>;
 }
 
@@ -266,9 +314,11 @@ export function useDraftSaver(key) {
 }
 
 // ---------- Step-by-step form ----------
+// Steps on the left, the current step on the right, Back/Next pinned at the bottom.
 // steps: [{ title, content: node | (values) => node, blocked? }]. All steps stay mounted so the form submits every field.
-export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', draft, onDiscard, error }) {
+export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', draft, onDiscard, error, aside }) {
   const form = useRef(null);
+  const body = useRef(null);
   const stepRefs = useRef([]);
   const [index, setIndex] = useState(0);
   const [values, setValues] = useState({});
@@ -280,7 +330,7 @@ export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', 
     firstInvalid?.focus();
     return !firstInvalid;
   };
-  const go = (next) => { setIndex(next); form.current?.scrollIntoView({ behavior: 'auto', block: 'start' }); };
+  const go = (next) => { setIndex(next); body.current?.scrollTo?.({ top: 0 }); };
   useEffect(() => { stepRefs.current[index]?.focus({ preventScroll: true }); }, [index]);
   const submit = (e) => {
     e.preventDefault();
@@ -294,12 +344,23 @@ export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', 
     }
     onSubmit(current);
   };
-  return <form ref={form} noValidate onSubmit={submit} onInput={() => draft?.save(form.current)} onChange={() => draft?.save(form.current)}>
-    <ol className="wizard-steps" style={{ '--steps': steps.length }}>{steps.map((step, i) => <li key={step.title} className={i < index ? 'done' : i === index ? 'current' : ''} aria-current={i === index ? 'step' : undefined}><span>{step.title}</span></li>)}</ol>
-    <div className="wizard-meta"><span>Step {index + 1} of {steps.length} · <strong>{(steps[index].title)}</strong></span>{draft?.savedAt && <span className="field-hint"><FloppyDisk size={14} /> Draft saved on this device · <button type="button" className="text-button" onClick={onDiscard}>Discard draft</button></span>}</div>
-    {steps.map((step, i) => <div key={step.title} ref={(el) => { stepRefs.current[i] = el; }} className="wizard-step" tabIndex={-1} aria-label={step.title} hidden={i !== index}>{typeof step.content === 'function' ? step.content(values) : step.content}</div>)}
-    <Notice>{error}</Notice>
-    <div className="wizard-actions">{index > 0 && <button type="button" className="button secondary" onClick={() => go(index - 1)}><ArrowLeft size={18} /> Back</button>}<span className="spacer" /><button className="button" disabled={busy || steps[index].blocked}>{last ? (busy ? 'Saving…' : submitLabel) : 'Next'}<ArrowRight size={18} /></button></div>
+  return <form ref={form} noValidate className="wizard grow" onSubmit={submit} onInput={() => draft?.save(form.current)} onChange={() => draft?.save(form.current)}>
+    <aside className="wizard-rail">
+      <ol className="step-list">{steps.map((step, i) => <li key={step.title} className={i < index ? 'done' : i === index ? 'current' : ''} aria-current={i === index ? 'step' : undefined}><span className="num" aria-hidden="true">{i < index ? <Check size={12} weight="bold" /> : i + 1}</span><span className="label">{step.title}</span></li>)}</ol>
+      {aside && <div className="wizard-tip">{aside}</div>}
+    </aside>
+    <div className="wizard-card">
+      <div className="wizard-head"><strong>{steps[index].title}</strong><span>Step {index + 1} of {steps.length}</span></div>
+      <div className="wizard-body" ref={body}>
+        {steps.map((step, i) => <div key={step.title} ref={(el) => { stepRefs.current[i] = el; }} className="wizard-step" tabIndex={-1} aria-label={step.title} hidden={i !== index}>{typeof step.content === 'function' ? step.content(values) : step.content}</div>)}
+        <Notice>{error}</Notice>
+      </div>
+      <div className="wizard-footer">
+        <span className="draft-note">{draft?.savedAt && <><FloppyDisk size={14} /> Draft saved on this device · <button type="button" className="text-button" onClick={onDiscard}>Discard draft</button></>}</span>
+        {index > 0 && <button type="button" className="button secondary" onClick={() => go(index - 1)}><ArrowLeft size={18} /> Back</button>}
+        <button className="button" disabled={busy || steps[index].blocked}>{last ? (busy ? 'Saving…' : submitLabel) : 'Next'}<ArrowRight size={18} /></button>
+      </div>
+    </div>
   </form>;
 }
 export function ReviewList({ items }) {
@@ -307,8 +368,8 @@ export function ReviewList({ items }) {
 }
 
 // ---------- Journey tracker ----------
-export function Journey({ steps, compact = false }) {
-  return <ol className={`journey ${compact ? 'compact' : ''}`} style={{ '--steps': steps.length }}>{steps.map((step) => <li key={step.label} className={step.state} aria-current={step.state === 'current' ? 'step' : undefined}><span className="marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} weight="bold" /> : step.state === 'failed' ? <X size={13} weight="bold" /> : null}</span><span>{step.label}</span></li>)}</ol>;
+export function Journey({ steps, compact = false, vertical = false }) {
+  return <ol className={`journey ${compact ? 'compact' : ''} ${vertical ? 'vertical' : ''}`} style={{ '--steps': steps.length }}>{steps.map((step) => <li key={step.label} className={step.state} aria-current={step.state === 'current' ? 'step' : undefined}><span className="marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} weight="bold" /> : step.state === 'failed' ? <X size={13} weight="bold" /> : null}</span><span>{step.label}</span></li>)}</ol>;
 }
 export function requestJourney(request, matches = []) {
   const related = matches.filter((m) => m.request_id === request.id);
@@ -369,7 +430,7 @@ export function DataTable({ columns, rows, rowKey = (row) => row.id, pageSize = 
       return sort.dir === 'asc' ? order : -order;
     });
   }, [rows, sort, columns]);
-  if (!rows.length) return <Empty title={emptyTitle}>{emptyText}</Empty>;
+  if (!rows.length) return <InlineEmpty><strong>{emptyTitle}</strong>{emptyText && <> {emptyText}</>}</InlineEmpty>;
   const pages = Math.ceil(sorted.length / pageSize);
   const current = Math.min(page, pages - 1);
   const start = current * pageSize;
