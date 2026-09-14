@@ -6,6 +6,8 @@ import { createApp } from './app.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { notify } from './util.js';
+import { deliverEmailQueue, validCronToken } from './email.js';
 
 const registration = (email = 'member@example.test', extra = {}) => ({ first_name: 'Test', last_name: 'Member', dob: '1995-02-10', blood_group: 'O+', gender: 'Other', email, password: 'MemberPass123!', confirm_password: 'MemberPass123!', phone: '0000000000', address: 'Test City', zip: '000000', consent: true, ...extra });
 const hospitalRegistration = (email = 'staff@hospital.test', extra = {}) => ({ hospital_name: 'Test Hospital', registration_number: `REG-${email}`, city: 'Mumbai', state: 'Maharashtra', pincode: '400001', hospital_phone: '0000000000', first_name: 'Staff', last_name: 'Member', phone: '0000000000', email, password: 'HospitalPass123!', confirm_password: 'HospitalPass123!', consent: true, ...extra });
@@ -13,7 +15,7 @@ const organRequest = (hospital_id, extra = {}) => ({ organ: 'Kidney', blood_grou
 const pledge = (extra = {}) => ({ organ: 'Kidney', donor_type: 'living', city: 'Pune', state: 'Maharashtra', height: 170, weight: 65, last_donation: '', operation_type: 'None', operation_desc: '', disease_type: 'None', disease_desc: '', accident_type: 'None', accident_desc: '', pregnant: 'Not applicable', menstruation: 'Not applicable', consent: true, ...extra });
 const OVERRIDE = 'Clinical team documented a time-critical exception.';
 
-async function fixture(t) { const db = await openDatabase(':memory:'); const app = createApp(db, { limitAuth: false }); t.after(() => db.close()); return { db, app }; }
+async function fixture(t, options = {}) { const db = await openDatabase(':memory:'); const app = createApp(db, { limitAuth: false, ...options }); t.after(() => db.close()); return { db, app }; }
 async function member(app, email, extra) { const client = request.agent(app); const result = await client.post('/api/auth/register').send(registration(email, extra)).expect(201); return { client, user: result.body.user }; }
 async function hospital(app, db, email = 'staff@hospital.test', extra = {}) {
   const client = request.agent(app);
@@ -198,6 +200,12 @@ test('deceased pledges match only after a hospital reports them available, withi
   const [candidate] = (await mumbai.client.get(`/api/hospital/requests/${nearRequest}/candidates`)).body.candidates;
   assert.equal(candidate.pledge_id, pledgeId); assert.equal(candidate.location, 'Test Hospital, Mumbai');
   assert.equal((await bengaluru.client.get(`/api/hospital/requests/${farRequest}/candidates`)).body.candidates.length, 0);
+
+  // An after-death donor cannot respond, so the match starts accepted and can be confirmed.
+  const deceasedMatch = (await mumbai.client.post('/api/hospital/matches').send({ request_id: nearRequest, pledge_id: pledgeId }).expect(201)).body;
+  assert.equal(deceasedMatch.donor_response, 'accepted');
+  await mumbai.client.patch(`/api/hospital/matches/${deceasedMatch.id}`).send({ status: 'confirmed', reason: '' }).expect(200);
+  assert.equal((await donor.client.get('/api/notifications')).body.items.filter((n) => n.kind.startsWith('match_')).length, 0);
 });
 test('withdrawing a pledge or closing a request declines proposed matches', async (t) => {
   const { app, db } = await fixture(t);
@@ -253,6 +261,45 @@ test('admin sees national rankings and oversight data; member deletion cascades'
   await donor.client.get('/api/records').expect(401);
   assert.equal((await db.prepare('SELECT COUNT(*)::int AS n FROM pledges').get()).n, 0);
 });
+test('notifications reach the right people across the match lifecycle; admin analytics add up', async (t) => {
+  const { app, db } = await fixture(t);
+  const admin = await member(app, 'admin@example.test'); await db.prepare("UPDATE users SET role='admin' WHERE id=?").run(admin.user.id);
+  const staff = request.agent(app);
+  const hospitalId = (await staff.post('/api/hospital/register').send(hospitalRegistration()).expect(201)).body.user.hospital.id;
+  const adminInbox = (await admin.client.get('/api/notifications')).body;
+  assert.equal(adminInbox.unread, 1); assert.match(adminInbox.items[0].title, /Test Hospital/); assert.equal(adminInbox.items[0].link, '/admin?tab=hospitals');
+  await admin.client.patch(`/api/admin/hospitals/${hospitalId}`).send({ status: 'verified' }).expect(200);
+  assert.equal((await staff.get('/api/notifications')).body.items[0].kind, 'hospital_verified');
+
+  const donor = await member(app, 'donor@example.test'); const owner = await member(app, 'owner@example.test');
+  const pledgeId = (await donor.client.post('/api/pledges').send(pledge())).body.id;
+  const requestId = (await owner.client.post('/api/requests').send(organRequest(hospitalId))).body.id;
+  assert.ok((await staff.get('/api/notifications')).body.items.some((n) => n.link === `/hospital?request=${requestId}`));
+  await verify({ client: staff }, requestId, 'critical');
+  assert.equal((await owner.client.get('/api/notifications')).body.items[0].kind, 'request_verified');
+  const matchId = (await staff.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: pledgeId })).body.id;
+  const donorInbox = (await donor.client.get('/api/notifications')).body;
+  assert.equal(donorInbox.unread, 1); assert.equal(donorInbox.items[0].kind, 'match_proposed');
+  await donor.client.patch(`/api/matches/${matchId}/response`).send({ response: 'accepted' }).expect(200);
+  assert.ok((await staff.get('/api/notifications')).body.items.some((n) => n.kind === 'donor_accepted'));
+  await staff.patch(`/api/hospital/matches/${matchId}`).send({ status: 'confirmed', reason: '' }).expect(200);
+  assert.ok((await donor.client.get('/api/notifications')).body.items.some((n) => n.kind === 'match_confirmed'));
+
+  const ownerInbox = (await owner.client.get('/api/notifications')).body;
+  assert.deepEqual(ownerInbox.items.map((n) => n.kind), ['match_confirmed', 'donor_proposed', 'request_verified']);
+  await donor.client.post('/api/notifications/read').send({ ids: [ownerInbox.items[0].id] }).expect(200);
+  assert.equal((await owner.client.get('/api/notifications')).body.unread, 3, "another account's read does not touch these");
+  await owner.client.post('/api/notifications/read').send({ ids: [ownerInbox.items[0].id] }).expect(200);
+  assert.equal((await owner.client.get('/api/notifications')).body.unread, 2);
+  await owner.client.post('/api/notifications/read').send({}).expect(200);
+  assert.equal((await owner.client.get('/api/notifications')).body.unread, 0);
+  await request(app).get('/api/notifications').expect(401);
+
+  const analytics = (await admin.client.get('/api/admin/analytics').expect(200)).body;
+  assert.deepEqual(analytics.matchesByState, [{ state: 'Maharashtra', confirmed: 1, proposed: 0 }]);
+  assert.deepEqual(analytics.requestsByOrgan, []);
+  await donor.client.get('/api/admin/analytics').expect(403);
+});
 test('cross-origin writes, form posts, invalid JSON, and expired sessions are rejected', async (t) => {
   const { app, db } = await fixture(t);
   await request(app).post('/api/auth/register').set('Origin', 'https://untrusted.example').send(registration()).expect(403);
@@ -279,7 +326,7 @@ test('database data survives closing and reopening the local store', async () =>
     await db.prepare('INSERT INTO users(first_name,last_name,dob,blood_group,gender,email,password_hash,phone,address,zip) VALUES(?,?,?,?,?,?,?,?,?,?)').run('Test','Persistence','1990-01-01','O+','Other','test@example.test','unused','0000000000','Test City','000000');
     await db.close(); db = await openDatabase(store);
     assert.equal((await db.prepare('SELECT first_name FROM users').get()).first_name, 'Test');
-    assert.deepEqual((await db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).map((row) => row.version), [1, 2]);
+    assert.deepEqual((await db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).map((row) => row.version), [1, 2, 3, 4]);
     await db.close();
   } finally {
     // Windows can hold file handles briefly after close; retry cleanup instead of flaking.
@@ -288,4 +335,58 @@ test('database data survives closing and reopening the local store', async () =>
       catch (error) { if (attempt >= 5) throw error; await new Promise((r) => setTimeout(r, 50 * attempt)); }
     }
   }
+});
+
+
+test('postal lookup validates input and reports unavailable service without guessing a city', async (t) => {
+  const { app } = await fixture(t, { lookupPostal: async (pin) => {
+    if (pin === '400001') return [{ city: 'Mumbai', state: 'Maharashtra' }];
+    if (pin === '999999') return [];
+    throw new Error('provider unavailable');
+  } });
+  await request(app).get('/api/pincodes/40000').expect(400);
+  const found = await request(app).get('/api/pincodes/400001').expect(200);
+  assert.equal(found.body.locations[0].city, 'Mumbai');
+  assert.deepEqual((await request(app).get('/api/pincodes/999999')).body.locations, []);
+  await request(app).get('/api/pincodes/110001').expect(503);
+});
+
+test('email preferences are private; alert jobs are transactional, retryable, and respect opt-out', async (t) => {
+  const { app, db } = await fixture(t);
+  const owner = await member(app, 'alerts@example.test');
+  const other = await member(app, 'other-alerts@example.test');
+  await request(app).get('/api/notifications/preferences').expect(401);
+  await request(app).get('/api/jobs/email').expect(401);
+  assert.equal(validCronToken('Bearer test-secret', 'test-secret'), true);
+  assert.equal(validCronToken('Bearer wrong', 'test-secret'), false);
+  assert.equal(validCronToken('Bearer undefined', undefined), false);
+  assert.equal((await owner.client.get('/api/notifications/preferences')).body.email_alerts, false);
+  await owner.client.patch('/api/notifications/preferences').send({ email_alerts: true, user_id: other.user.id }).expect(400);
+  await owner.client.patch('/api/notifications/preferences').send({ email_alerts: true }).expect(200);
+  assert.equal((await other.client.get('/api/notifications/preferences')).body.email_alerts, false);
+  const alert = { kind: 'match_proposed', title: 'Sensitive organ and patient details', body: 'Private medical history', link: '/dashboard' };
+  await assert.rejects(db.transaction(async (tx) => { await notify(tx, { userIds: [owner.user.id] }, alert); throw new Error('rollback'); }));
+  assert.equal((await db.prepare('SELECT COUNT(*)::int AS n FROM email_outbox').get()).n, 0);
+  await notify(db, { userIds: [owner.user.id, other.user.id, owner.user.id] }, alert);
+  assert.equal((await db.prepare('SELECT COUNT(*)::int AS n FROM email_outbox').get()).n, 1);
+  assert.equal((await deliverEmailQueue(db, { env: {} })).configured, false);
+  const env = { RESEND_API_KEY: 'test-key', ALERT_EMAIL_FROM: 'OrganoTale <alerts@example.test>', APP_URL: 'https://organotale.example.test' };
+  const calls = [];
+  const failOnce = async (url, options) => { calls.push(options); return new Response('{}', { status: 503 }); };
+  const failed = await deliverEmailQueue(db, { env, fetcher: failOnce });
+  assert.equal(failed.failed, 1);
+  assert.equal((await db.prepare('SELECT status FROM email_outbox').get()).status, 'pending');
+  await db.prepare("UPDATE email_outbox SET next_attempt_at=now() - interval '1 second'").run();
+  const success = async (url, options) => { calls.push(options); return new Response('{"id":"email-test"}', { status: 200 }); };
+  const results = await Promise.all([deliverEmailQueue(db, { env, fetcher: success }), deliverEmailQueue(db, { env, fetcher: success })]);
+  assert.equal(results.reduce((sum, result) => sum + result.sent, 0), 1);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].body, calls[1].body);
+  assert.equal(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+  assert.ok(!calls[1].body.includes('Sensitive') && !calls[1].body.includes('Private medical'));
+  assert.deepEqual(JSON.parse(calls[1].body).to, [owner.user.email]);
+  await notify(db, { userIds: [owner.user.id] }, { ...alert, kind: 'match_confirmed' });
+  await owner.client.patch('/api/notifications/preferences').send({ email_alerts: false }).expect(200);
+  assert.equal((await deliverEmailQueue(db, { env, fetcher: success })).sent, 0);
+  assert.equal((await db.prepare("SELECT COUNT(*)::int AS n FROM email_outbox WHERE status='cancelled'").get()).n, 1);
 });

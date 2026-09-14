@@ -12,7 +12,7 @@
     "start": "node server/index.js",
     "seed": "node server/seed.js",
     "make-admin": "node server/make-admin.js",
-    "test": "node --test server/matching.test.js server/app.test.js",
+    "test": "node --test server/matching.test.js server/pincode.test.js server/app.test.js src/components.test.js",
     "check": "tsc --noEmit",
     "dev:vercel": "vercel dev",
     "deploy": "vercel --prod"
@@ -37,6 +37,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "jsdom": "^30.0.1",
     "supertest": "^7.2.2",
     "typescript": "^7.0.2",
     "vercel": "^59.16.0",

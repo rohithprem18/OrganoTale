@@ -10,6 +10,9 @@ import { accountRoutes } from './routes/account.js';
 import { memberRoutes } from './routes/member.js';
 import { hospitalRoutes } from './routes/hospital.js';
 import { adminRoutes } from './routes/admin.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { postalLookup } from './pincode.js';
+import { deliverEmailQueue, validCronToken } from './email.js';
 
 function isAllowedOrigin(req, origin) {
   const extra = (process.env.APP_ORIGIN || '').split(',').map((value) => value.trim()).filter(Boolean);
@@ -21,7 +24,7 @@ function isAllowedOrigin(req, origin) {
   }
 }
 
-export function createApp(db, { limitAuth = true } = {}) {
+export function createApp(db, { limitAuth = true, lookupPostal = postalLookup() } = {}) {
   const app = express();
   app.disable('x-powered-by');
   if (process.env.VERCEL) app.set('trust proxy', 1);
@@ -43,8 +46,18 @@ export function createApp(db, { limitAuth = true } = {}) {
   if (limitAuth) app.use(['/api/auth/login', '/api/auth/register', '/api/hospital/register'], authLimit);
 
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+  app.get('/api/jobs/email', async (req, res) => {
+    if (!validCronToken(req.headers.authorization, process.env.CRON_SECRET)) throw new HttpError(401, 'Job authentication required.');
+    res.json(await deliverEmailQueue(db));
+  });
+  app.get('/api/pincodes/:pin', rateLimit({ windowMs: 60000, limit: 40, standardHeaders: 'draft-8', legacyHeaders: false }), async (req, res) => {
+    if (!/^[1-9]\d{5}$/.test(req.params.pin)) throw new HttpError(400, 'Enter a six-digit Indian PIN code.');
+    try { res.json({ locations: await lookupPostal(req.params.pin) }); }
+    catch { throw new HttpError(503, 'Location lookup unavailable. Enter your location manually.'); }
+  });
   app.get('/api/hospitals', async (req, res) => res.json(await db.prepare("SELECT id, name, city, state FROM hospitals WHERE status='verified' ORDER BY state, city, name").all()));
   app.use('/api/auth', accountRoutes(db));
+  app.use('/api/notifications', notificationRoutes(db));
   app.use('/api/hospital', hospitalRoutes(db));
   app.use('/api/admin', adminRoutes(db));
   app.use('/api', memberRoutes(db));

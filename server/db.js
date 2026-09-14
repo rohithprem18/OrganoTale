@@ -137,6 +137,40 @@ const MIGRATIONS = [
       DROP TABLE IF EXISTS applications;
     `,
   },
+  {
+    version: 3,
+    // In-app notifications for verification and match events.
+    sql: `
+      CREATE TABLE notifications (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '',
+        read_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX notifications_user ON notifications (user_id, id DESC);
+    `,
+  },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE users ADD COLUMN email_alerts BOOLEAN NOT NULL DEFAULT false;
+      CREATE TABLE email_outbox (
+        id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        notification_id INTEGER NOT NULL UNIQUE REFERENCES notifications(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','cancelled')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        first_attempt_at TIMESTAMPTZ,
+        sent_at TIMESTAMPTZ,
+        last_error TEXT,
+        payload JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX email_outbox_pending ON email_outbox(status, next_attempt_at);
+    `,
+  },
 ];
 
 // Runs inside one transaction, so a failed migration leaves the schema untouched.

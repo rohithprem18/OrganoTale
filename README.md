@@ -81,6 +81,24 @@ Demo accounts from `npm run seed`:
 | Hospital, awaiting verification | `pending.hospital@example.test` | `DemoHospital123!` |
 | Admin | `admin@organdonation.local` | `DemoAdmin123!` |
 
+## App workspace and alerts
+
+Signed-in members have separate **My pledges**, **My requests**, **Matches**, and **Records** views. Hospital staff use the request split view and matches board. Admin charts include pending hospitals by state. Public pages retain the marketing layout.
+
+**Settings** saves the language, reduced-motion preference, and opt-in email alerts. Hindi, Tamil, and Telugu cover navigation, statuses, form labels, and preferences; some longer guidance remains in English. Pledge and request drafts are saved on the device, including when navigating away, and cleared on logout. Consent is never restored from a draft.
+
+PIN lookup uses the [PostalPinCode directory](https://www.postalpincode.in/Api-Details) through the API, with a timeout, limited cache, and manual entry fallback. It suggests the postal district as the city; users should check and correct that suggestion. PIN codes spanning multiple districts offer a choice. No clinical information is sent to the lookup service.
+
+### Enable email alerts
+
+1. Set `RESEND_API_KEY`, `ALERT_EMAIL_FROM` (on a verified sending domain), and `APP_URL` (the HTTPS site URL). See `.env.example` and [Resend's email API](https://resend.com/docs/api-reference/emails/send-email).
+2. Members enable **Settings → Email alerts**. Alerts are queued when a donor is proposed or a match is confirmed; emails contain a sign-in link without names or clinical information. Existing events are not backfilled.
+3. `npm start` and the local dev server process the queue every minute. Vercel processes a small batch after successful writes. For dependable retries when the site is idle, configure a scheduler to call `GET /api/jobs/email` every minute with `Authorization: Bearer <CRON_SECRET>`. Configure `CRON_SECRET` on the server too; the job endpoint rejects unauthenticated calls.
+
+The outbox is committed with match notifications, uses a claim lease for concurrent workers, and retries failed sends up to five times with the [same Resend idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys). Uncertain deliveries stop retrying after 23 hours. `email_outbox.status`, `attempts`, and `last_error` expose delivery failures for operations; `sent` means provider acceptance, not proof of inbox delivery. Turning alerts off cancels queued jobs, though an email already in flight may still arrive. Automated tests use a fake provider and never send emails.
+
+Email is the implemented external channel; SMS and WhatsApp are not configured.
+
 ## Scripts
 
 | Command | Purpose |

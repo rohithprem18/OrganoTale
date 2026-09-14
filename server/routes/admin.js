@@ -1,7 +1,7 @@
 import express from 'express';
 import { publicUser } from '../auth.js';
 import { hospitalStatusSchema } from '../validation.js';
-import { HttpError, idOf, audit, loadMatching } from '../util.js';
+import { HttpError, idOf, audit, notify, loadMatching } from '../util.js';
 import { rankRecipients, screeningFlags, ageOn } from '../matching.js';
 
 // /api/admin — national coordination: hospital verification, oversight, and the audit trail.
@@ -41,8 +41,27 @@ export function adminRoutes(db) {
     await db.transaction(async (tx) => {
       await tx.prepare('UPDATE hospitals SET status=? WHERE id=?').run(status, hospital.id);
       await audit(tx, req.user.id, 'hospital', hospital.id, `status_${status}`, { previous: hospital.status });
+      if (status !== hospital.status && status !== 'pending') {
+        await notify(tx, { hospitalId: hospital.id }, status === 'verified'
+          ? { kind: 'hospital_verified', title: `${hospital.name} is verified`, body: 'You can now verify patient requests and propose matches.', link: '/hospital' }
+          : { kind: 'hospital_suspended', title: `${hospital.name} has been suspended`, body: 'Contact an administrator to restore access.', link: '/hospital' });
+      }
     });
     res.json({ success: true });
+  });
+
+  // Figures behind the admin overview charts.
+  router.get('/analytics', async (req, res) => {
+    const all = (sql) => db.prepare(sql).all();
+    const [requestsByOrgan, waitingByOrgan, matchesByState] = await Promise.all([
+      all(`SELECT organ, COUNT(*)::int AS open, (COUNT(*) FILTER (WHERE verification='verified'))::int AS verified
+        FROM requests WHERE status='open' GROUP BY organ ORDER BY open DESC, organ`),
+      all(`SELECT organ, ROUND(AVG(EXTRACT(EPOCH FROM (now() - verified_at)) / 86400))::int AS days, COUNT(*)::int AS requests
+        FROM requests WHERE status='open' AND verification='verified' AND verified_at IS NOT NULL GROUP BY organ ORDER BY days DESC, organ`),
+      all(`SELECT h.state, (COUNT(*) FILTER (WHERE m.status='confirmed'))::int AS confirmed, (COUNT(*) FILTER (WHERE m.status='proposed'))::int AS proposed
+        FROM matches m JOIN hospitals h ON h.id=m.hospital_id GROUP BY h.state ORDER BY confirmed DESC, proposed DESC, h.state`),
+    ]);
+    res.json({ requestsByOrgan, waitingByOrgan, matchesByState });
   });
 
   // Every recipient this donor could help, in priority order across all hospitals.

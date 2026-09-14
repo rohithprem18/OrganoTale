@@ -2,7 +2,7 @@ import express from 'express';
 import { z } from 'zod';
 import { hashPassword, createSession } from '../auth.js';
 import { hospitalRegisterSchema, verificationSchema, proposalSchema, matchDecisionSchema } from '../validation.js';
-import { HttpError, idOf, audit, loadMatching } from '../util.js';
+import { HttpError, idOf, audit, notify, loadMatching } from '../util.js';
 import { evaluate, rankRecipients, rankDonors } from '../matching.js';
 import { accountView } from './account.js';
 
@@ -23,6 +23,7 @@ export function hospitalRoutes(db) {
       const hospital = await tx.prepare('INSERT INTO hospitals(name,registration_number,city,state,pincode,phone,email) VALUES(?,?,?,?,?,?,?) RETURNING id').get(d.hospital_name, d.registration_number, d.city, d.state, d.pincode, d.hospital_phone, d.email);
       const user = await tx.prepare(`INSERT INTO users(first_name,last_name,email,password_hash,phone,address,zip,role,hospital_id) VALUES(?,?,?,?,?,?,?,'hospital',?) RETURNING *`).get(d.first_name, d.last_name, d.email, passwordHash, d.phone, `${d.city}, ${d.state}`, d.pincode, hospital.id);
       await audit(tx, user.id, 'hospital', hospital.id, 'registered', { name: d.hospital_name, registration_number: d.registration_number });
+      await notify(tx, { role: 'admin' }, { kind: 'hospital_registered', title: `New hospital registration: ${d.hospital_name}`, body: `${d.city}, ${d.state} · awaiting verification`, link: '/admin?tab=hospitals' });
       return user;
     });
     await createSession(db, res, staff.id);
@@ -75,6 +76,10 @@ export function hospitalRoutes(db) {
       } else {
         await tx.prepare("UPDATE requests SET verification='rejected', priority=NULL, clinical_score=0, hospital_note=?, verified_at=NULL WHERE id=?").run(d.note, row.id);
       }
+      const organ = row.organ.toLowerCase();
+      await notify(tx, { userIds: [row.user_id] }, d.decision === 'verified'
+        ? { kind: 'request_verified', title: `Your ${organ} request is verified`, body: `${req.hospital.name} set its priority to ${d.priority}. It is now in priority matching.`, link: `/requests/${row.id}` }
+        : { kind: 'request_rejected', title: `Your ${organ} request could not be verified`, body: d.note, link: `/requests/${row.id}` });
       await audit(tx, req.user.id, 'request', row.id, d.decision, {
         previous: { verification: row.verification, priority: row.priority, clinical_score: row.clinical_score },
         priority: d.priority ?? null, clinical_score: d.clinical_score, note: d.note,
@@ -129,14 +134,20 @@ export function hospitalRoutes(db) {
       throw new HttpError(400, `A higher-priority recipient exists for this donor (this request ranks #${rank} of ${ranking.length}). Give an override reason of at least 20 characters.`);
     }
     const overrideReason = rank > 1 ? d.override_reason : '';
+    // An after-death donor cannot respond; consent was documented when the hospital reported them available.
+    const deceased = pledge.donor_type === 'deceased';
+    const donorResponse = deceased ? 'accepted' : 'pending';
     try {
       const match = await db.transaction(async (tx) => {
-        const created = await tx.prepare('INSERT INTO matches(request_id,pledge_id,hospital_id,proposed_by,score,recipient_rank,breakdown,flags,override_reason) VALUES(?,?,?,?,?,?,?::jsonb,?::jsonb,?) RETURNING id')
-          .get(request.id, pledge.id, req.hospital.id, req.user.id, result.score, rank, JSON.stringify(result.breakdown), JSON.stringify(result.flags), overrideReason);
+        const created = await tx.prepare('INSERT INTO matches(request_id,pledge_id,hospital_id,proposed_by,score,recipient_rank,breakdown,flags,override_reason,donor_response) VALUES(?,?,?,?,?,?,?::jsonb,?::jsonb,?,?) RETURNING id, donor_response')
+          .get(request.id, pledge.id, req.hospital.id, req.user.id, result.score, rank, JSON.stringify(result.breakdown), JSON.stringify(result.flags), overrideReason, donorResponse);
         await audit(tx, req.user.id, 'match', created.id, 'proposed', { request_id: request.id, pledge_id: pledge.id, score: result.score, rank, competing_recipients: ranking.length, override_reason: overrideReason });
+        const organ = request.organ.toLowerCase();
+        if (!deceased) await notify(tx, { userIds: [pledge.user_id] }, { kind: 'match_proposed', title: `You have been proposed as a ${organ} donor`, body: `${req.hospital.name} proposed a match. Review it on your dashboard.`, link: '/dashboard' });
+        await notify(tx, { userIds: [request.user_id] }, { kind: 'donor_proposed', title: `A donor has been proposed for your ${organ} request`, body: `${req.hospital.name} is coordinating the next steps.`, link: `/requests/${request.id}` });
         return created;
       });
-      res.status(201).json({ id: match.id, status: 'proposed', score: result.score, recipient_rank: rank });
+      res.status(201).json({ id: match.id, status: 'proposed', donor_response: match.donor_response, score: result.score, recipient_rank: rank });
     } catch (error) {
       if (error.code === '23505') throw new HttpError(409, 'This donor already has an active match.');
       throw error;
@@ -176,11 +187,20 @@ export function hospitalRoutes(db) {
         const request = await tx.prepare("SELECT quantity, (SELECT COUNT(*)::int FROM matches WHERE request_id=? AND status='confirmed') AS confirmed FROM requests WHERE id=?").get(match.request_id, match.request_id);
         if (request.confirmed >= request.quantity) {
           requestClosed = true;
+          const others = await tx.prepare("SELECT p.user_id FROM matches m JOIN pledges p ON p.id=m.pledge_id WHERE m.request_id=? AND m.status='proposed' AND p.donor_type='living'").all(match.request_id);
           await tx.prepare("UPDATE requests SET status='closed' WHERE id=?").run(match.request_id);
           await tx.prepare("UPDATE matches SET status='declined', decision_reason='Request fulfilled by another match', updated_at=now() WHERE request_id=? AND status='proposed'").run(match.request_id);
+          await notify(tx, { userIds: others.map((row) => row.user_id) }, { kind: 'match_declined', title: 'A proposed match was closed', body: 'The patient’s request was fulfilled by another donor. Thank you for offering to help.', link: '/dashboard' });
         }
       }
       await audit(tx, req.user.id, 'match', match.id, d.status, { reason: d.reason, request_closed: requestClosed });
+      const parties = await tx.prepare('SELECT r.user_id AS requester_id, r.organ, p.user_id AS donor_id, p.donor_type FROM matches m JOIN requests r ON r.id=m.request_id JOIN pledges p ON p.id=m.pledge_id WHERE m.id=?').get(match.id);
+      const organ = parties.organ.toLowerCase();
+      const confirmed = d.status === 'confirmed';
+      await notify(tx, { userIds: [parties.requester_id] }, { kind: `match_${d.status}`, title: confirmed ? `A donor match is confirmed for your ${organ} request` : `A proposed ${organ} match did not go ahead`, body: confirmed ? `${req.hospital.name} will contact you about next steps.` : d.reason, link: `/requests/${match.request_id}` });
+      if (parties.donor_type === 'living') {
+        await notify(tx, { userIds: [parties.donor_id] }, { kind: `match_${d.status}`, title: confirmed ? `Your ${organ} donation match is confirmed` : `Your proposed ${organ} match did not go ahead`, body: confirmed ? `${req.hospital.name} will guide you through the next steps.` : d.reason, link: '/dashboard' });
+      }
     });
     res.json({ success: true });
   });

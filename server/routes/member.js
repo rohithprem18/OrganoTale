@@ -1,6 +1,6 @@
 import express from 'express';
 import { requestSchema, requestUpdateSchema, recordSchema, pledgeSchema, pledgeStatusSchema, donorResponseSchema } from '../validation.js';
-import { HttpError, idOf, audit } from '../util.js';
+import { HttpError, idOf, audit, notify } from '../util.js';
 
 // Changing any of these after verification sends the request back to its hospital.
 const CLINICAL_FIELDS = ['organ', 'blood_group', 'hospital_id', 'patient_dob'];
@@ -30,7 +30,7 @@ export function memberRoutes(db) {
   });
 
   // ---- Organ requests (recipients) ----
-  const requestSelect = `SELECT r.*, u.first_name, u.last_name, h.name AS hospital_name, h.city AS hospital_city, h.state AS hospital_state
+  const requestSelect = `SELECT r.*, u.first_name, u.last_name, h.name AS hospital_name, h.city AS hospital_city, h.state AS hospital_state, h.status AS hospital_status
     FROM requests r JOIN users u ON u.id=r.user_id LEFT JOIN hospitals h ON h.id=r.hospital_id`;
   const forViewer = (row, user) => row.user_id === user.id || user.role === 'admin' ? row : Object.fromEntries(Object.entries(row).filter(([key]) => !PRIVATE_FIELDS.includes(key)));
   const verifiedHospital = async (id) => Boolean(await db.prepare("SELECT id FROM hospitals WHERE id=? AND status='verified'").get(id));
@@ -62,6 +62,7 @@ export function memberRoutes(db) {
     if (!await verifiedHospital(d.hospital_id)) throw new HttpError(400, 'Choose a verified hospital for this request.');
     const created = await db.prepare('INSERT INTO requests(user_id,organ,blood_group,quantity,urgency,address,zip,phone,note,patient_dob,hospital_id) VALUES(?,?,?,?,?,?,?,?,?,?,?) RETURNING id').get(req.user.id, d.organ, d.blood_group, d.quantity, d.urgency, d.address, d.zip, d.phone, d.note, d.patient_dob, d.hospital_id);
     await audit(db, req.user.id, 'request', created.id, 'created', { organ: d.organ, hospital_id: d.hospital_id });
+    await notify(db, { hospitalId: d.hospital_id }, { kind: 'request_created', title: `New ${d.organ.toLowerCase()} request awaiting verification`, body: 'Verify it to add the patient to priority matching.', link: `/hospital?request=${created.id}` });
     res.status(201).json({ id: created.id });
   });
   router.patch('/requests/:id', async (req, res) => {
@@ -80,7 +81,13 @@ export function memberRoutes(db) {
       if (resetVerification) sets.push("verification='pending'", 'priority=NULL', 'clinical_score=0', 'verified_at=NULL');
       await tx.prepare(`UPDATE requests SET ${sets.join(',')} WHERE id=?`).run(...entries.map(([, value]) => value), row.id);
       if (data.status === 'closed' && row.status !== 'closed') {
-        await tx.prepare("UPDATE matches SET status='declined', decision_reason='Request closed by the requester', updated_at=now() WHERE request_id=? AND status='proposed'").run(row.id);
+        const declined = await tx.prepare("UPDATE matches SET status='declined', decision_reason='Request closed by the requester', updated_at=now() WHERE request_id=? AND status='proposed'").run(row.id);
+        if (declined.changes && row.hospital_id) await notify(tx, { hospitalId: row.hospital_id }, { kind: 'request_closed', title: `Request #${row.id} was closed by the requester`, body: 'Its proposed match was declined automatically.', link: '/hospital?tab=matches' });
+      }
+      const hospitalId = data.hospital_id ?? row.hospital_id;
+      const movedHospital = data.hospital_id !== undefined && data.hospital_id !== row.hospital_id;
+      if ((resetVerification || movedHospital) && hospitalId) {
+        await notify(tx, { hospitalId }, { kind: 'request_changed', title: `Request #${row.id} needs verification`, body: movedHospital ? 'The requester chose your hospital as the treating hospital.' : 'The requester changed its clinical details.', link: `/hospital?request=${row.id}` });
       }
       await audit(tx, req.user.id, 'request', row.id, 'updated', { fields: Object.keys(data), verification_reset: resetVerification });
     });
@@ -120,7 +127,11 @@ export function memberRoutes(db) {
     try {
       await db.transaction(async (tx) => {
         if (status === 'withdrawn') {
+          const hospitals = await tx.prepare("SELECT DISTINCT hospital_id FROM matches WHERE pledge_id=? AND status='proposed'").all(row.id);
           await tx.prepare("UPDATE matches SET status='declined', donor_response='declined', decision_reason='Donor withdrew the pledge', updated_at=now() WHERE pledge_id=? AND status='proposed'").run(row.id);
+          for (const { hospital_id } of hospitals) {
+            await notify(tx, { hospitalId: hospital_id }, { kind: 'pledge_withdrawn', title: `Donor #${row.id} withdrew their pledge`, body: 'The proposed match was declined automatically.', link: '/hospital?tab=matches' });
+          }
         }
         await tx.prepare('UPDATE pledges SET status=? WHERE id=?').run(status, row.id);
         await audit(tx, req.user.id, 'pledge', row.id, status === 'withdrawn' ? 'withdrawn' : 'reactivated');
@@ -154,6 +165,12 @@ export function memberRoutes(db) {
         : await tx.prepare("UPDATE matches SET donor_response='declined', status='declined', decision_reason=?, updated_at=now() WHERE id=? AND status='proposed' AND donor_response='pending'").run(d.reason || 'Declined by the donor', match.id);
       if (!updated.changes) throw new HttpError(409, 'This match is no longer waiting for your response.');
       await audit(tx, req.user.id, 'match', match.id, `donor_${d.response}`, { reason: d.reason });
+      await notify(tx, { hospitalId: match.hospital_id }, {
+        kind: `donor_${d.response}`,
+        title: `Donor #${match.pledge_id} ${d.response} match #${match.id}`,
+        body: d.response === 'accepted' ? 'Their contact details are now visible. Arrange medical tests, then confirm.' : d.reason || 'No reason was given.',
+        link: '/hospital?tab=matches',
+      });
     });
     res.json({ success: true });
   });

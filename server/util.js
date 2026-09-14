@@ -12,6 +12,24 @@ export async function audit(db, actorId, entity, entityId, action, detail = {}) 
   await db.prepare('INSERT INTO audit_events(actor_id,entity,entity_id,action,detail) VALUES(?,?,?,?,?::jsonb)').run(actorId, entity, entityId, action, JSON.stringify(detail));
 }
 
+// In-app notification. `to` is { userIds: [...] }, { hospitalId } (all its staff), or { role }.
+export async function notify(db, to, { kind, title, body = '', link = '' }) {
+  const values = [kind, title, body, link];
+  let recipients;
+  if (to.userIds) {
+    recipients = [...new Set(to.userIds.filter(Boolean))];
+  } else {
+    const [column, value] = to.hospitalId ? ['hospital_id', to.hospitalId] : ['role', to.role];
+    recipients = (await db.prepare(`SELECT id FROM users WHERE ${column}=?`).all(value)).map((u) => u.id);
+  }
+  for (const userId of recipients) {
+    const notification = await db.prepare('INSERT INTO notifications(user_id,kind,title,body,link) VALUES(?,?,?,?,?) RETURNING id').get(userId, ...values);
+    if (['match_proposed', 'donor_proposed', 'match_confirmed'].includes(kind)) {
+      await db.prepare('INSERT INTO email_outbox(notification_id,user_id) SELECT ?, id FROM users WHERE id=? AND email_alerts=true').run(notification.id, userId);
+    }
+  }
+}
+
 // Everything the matching engine needs, loaded once per ranking.
 export async function loadMatching(db) {
   const pledges = await db.prepare(`SELECT p.*, u.dob AS donor_dob, u.blood_group AS donor_blood_group,
