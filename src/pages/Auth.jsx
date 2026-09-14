@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, Heartbeat, Check } from '@phosphor-icons/react';
 import { Field, Combobox, Notice, useAuth, useAsync, formValues, homeFor } from '../components';
-import { useT } from '../i18n';
 import { api } from '../api';
 import { BLOOD_GROUPS, STATES } from '../../shared/options';
 import { LocationFields } from '../LocationFields';
@@ -20,10 +19,9 @@ const phonePattern = String.raw`[+0-9 .\(\)\-]{7,25}`;
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function Login() {
-  const t = useT();
   const { user, setUser } = useAuth(); const action = useAsync(); const location = useLocation(); const navigate = useNavigate();
   if (user) return <Navigate to={homeFor(user)} replace />;
-  return <AuthLayout><form onSubmit={(event) => { event.preventDefault(); const body = formValues(event.currentTarget); action.run(async () => { const data = await api('/auth/login', { method: 'POST', body }); setUser(data.user); const from = location.state?.from; navigate(from?.startsWith('/') && !from.startsWith('//') ? from : homeFor(data.user), { replace: true }); }); }}><div className="fields"><Field label="Email address" name="email" type="email" autoComplete="email" placeholder="you@example.com" wide /><Field label="Password" name="password" type="password" autoComplete="current-password" placeholder="Enter your password" wide /></div><Notice>{action.error}</Notice><button className="button full" disabled={action.busy}>{action.busy ? 'Logging in…' : t('Log in')}<ArrowRight size={19} /></button><p className="auth-switch">New to the community? <Link to="/register">Create an account</Link></p><p className="auth-switch">Hospital staff? <Link to="/hospital/register">Register your hospital</Link></p></form><div className="auth-footnote"><Check size={17} /> Your pledges, requests, and matches in one place.</div></AuthLayout>;
+  return <AuthLayout><form onSubmit={(event) => { event.preventDefault(); const body = formValues(event.currentTarget); action.run(async () => { const data = await api('/auth/login', { method: 'POST', body }); setUser(data.user); const from = location.state?.from; navigate(from?.startsWith('/') && !from.startsWith('//') ? from : homeFor(data.user), { replace: true }); }); }}><div className="fields"><Field label="Email address" name="email" type="email" autoComplete="email" placeholder="you@example.com" wide /><Field label="Password" name="password" type="password" autoComplete="current-password" placeholder="Enter your password" wide /></div><Notice>{action.error}</Notice><button className="button full" disabled={action.busy}>{action.busy ? 'Logging in…' : 'Log in'}<ArrowRight size={19} /></button><p className="auth-switch">New to the community? <Link to="/register">Create an account</Link></p><p className="auth-switch">Hospital staff? <Link to="/hospital/register">Register your hospital</Link></p></form><div className="auth-footnote"><Check size={17} /> Your pledges, requests, and matches in one place.</div></AuthLayout>;
 }
 export function Register() {
   const { user, setUser } = useAuth(); const action = useAsync(); const navigate = useNavigate();

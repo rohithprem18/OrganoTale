@@ -2,13 +2,11 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CheckCircle, Handshake, HandHeart, Heartbeat, Hospital, WarningCircle, XCircle } from '@phosphor-icons/react';
 import { api } from '../api';
-import { useT } from '../i18n';
 import { useResource, Notice, Loading, Empty, PageHeading, Status, Stats, SearchBox, ConfirmButton, ScoreBreakdown, FlagList, NextStep, DataTable, BarChart, formatDate, formatDateTime } from '../components';
 
 const TABS = [['overview', 'Overview'], ['hospitals', 'Hospitals'], ['members', 'Members'], ['requests', 'Requests'], ['pledges', 'Pledges'], ['matches', 'Matches'], ['records', 'Records'], ['audit', 'Audit log']];
 
 export function Admin() {
-  const t = useT();
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([key]) => key === params.get('tab')) ? params.get('tab') : 'overview';
   const resource = useResource('/admin/dashboard');
@@ -21,7 +19,7 @@ export function Admin() {
   return <div className="page-container workspace">
     <PageHeading eyebrow="National coordination" title="Care starts with coordination.">Verify hospitals, oversee priority matching, and review every decision on the record.</PageHeading>
     <Notice>{resource.error}</Notice>
-    <div className="admin-toolbar"><div className="tabs" role="group" aria-label="Administration view">{TABS.map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} className={tab === key ? 'active' : ''} onClick={() => { setSearch(''); setParams(key === 'overview' ? {} : { tab: key }); }}>{t(label)}</button>)}</div>{!['overview', 'audit'].includes(tab) && <SearchBox value={search} onChange={setSearch} placeholder="Search this list" />}</div>
+    <div className="admin-toolbar"><div className="tabs" role="group" aria-label="Administration view">{TABS.map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} className={tab === key ? 'active' : ''} onClick={() => { setSearch(''); setParams(key === 'overview' ? {} : { tab: key }); }}>{label}</button>)}</div>{!['overview', 'audit'].includes(tab) && <SearchBox value={search} onChange={setSearch} placeholder="Search this list" />}</div>
     {!data ? <Loading variant="cards" /> : <div className={resource.refreshing ? 'refreshing' : ''}>
       {tab === 'overview' && <Overview data={data} analytics={analytics} onTab={(key) => setParams({ tab: key })} />}
       {tab === 'hospitals' && <DataTable rows={find(data.hospitals, 'name', 'registration_number', 'city', 'state', 'email')} emptyTitle="No hospitals" columns={[
@@ -32,8 +30,8 @@ export function Admin() {
         { key: 'created_at', header: 'Joined', render: (h) => formatDate(h.created_at) },
         { key: 'status', header: 'Status', render: (h) => <Status value={h.status} /> },
         { key: 'action', header: 'Action', sortable: false, render: (h) => h.status === 'verified'
-          ? <ConfirmButton title={`Suspend ${h.name}?`} description="Its staff lose portal access and its requests leave priority matching until reinstated." confirmLabel={t('Suspend')} busyLabel="Suspending…" success={`${h.name} suspended.`} onConfirm={() => setHospital(h, 'suspended')}>{t('Suspend')}</ConfirmButton>
-          : <ConfirmButton danger={false} title={`${h.status === 'suspended' ? 'Reinstate' : 'Verify'} ${h.name}?`} description="Its staff will be able to verify patient requests and propose matches. They’ll be notified." confirmLabel={h.status === 'suspended' ? t('Reinstate') : t('Verify')} success={`${h.name} is verified.`} onConfirm={() => setHospital(h, 'verified')}>{h.status === 'suspended' ? t('Reinstate') : t('Verify')}</ConfirmButton> },
+          ? <ConfirmButton title={`Suspend ${h.name}?`} description="Its staff lose portal access and its requests leave priority matching until reinstated." confirmLabel="Suspend" busyLabel="Suspending…" success={`${h.name} suspended.`} onConfirm={() => setHospital(h, 'suspended')}>Suspend</ConfirmButton>
+          : <ConfirmButton danger={false} title={`${h.status === 'suspended' ? 'Reinstate' : 'Verify'} ${h.name}?`} description="Its staff will be able to verify patient requests and propose matches. They’ll be notified." confirmLabel={h.status === 'suspended' ? 'Reinstate' : 'Verify'} success={`${h.name} is verified.`} onConfirm={() => setHospital(h, 'verified')}>{h.status === 'suspended' ? 'Reinstate' : 'Verify'}</ConfirmButton> },
       ]} initialSort={{ key: 'status', dir: 'asc' }} />}
       {tab === 'members' && <DataTable rows={find(data.users, 'first_name', 'last_name', 'email', 'role', 'hospital_name')} emptyTitle="No accounts" columns={[
         { key: 'first_name', header: 'Account', render: (u) => <><strong>{u.first_name} {u.last_name}</strong>{u.hospital_name && <small>{u.hospital_name}</small>}</> },
@@ -41,7 +39,7 @@ export function Admin() {
         { key: 'role', header: 'Role' },
         { key: 'blood_group', header: 'Blood group', render: (u) => u.blood_group || '—' },
         { key: 'created_at', header: 'Joined', render: (u) => formatDate(u.created_at) },
-        { key: 'action', header: 'Action', sortable: false, render: (u) => u.role === 'admin' ? '—' : <ConfirmButton title={`Delete ${u.first_name}’s account?`} description="This also deletes their requests, pledges, and records." confirmLabel={t('Delete')} busyLabel="Deleting…" success="Account deleted." onConfirm={async () => { await api(`/admin/users/${u.id}`, { method: 'DELETE' }); resource.refresh(); }}>{t('Delete')}</ConfirmButton> },
+        { key: 'action', header: 'Action', sortable: false, render: (u) => u.role === 'admin' ? '—' : <ConfirmButton title={`Delete ${u.first_name}’s account?`} description="This also deletes their requests, pledges, and records." confirmLabel="Delete" busyLabel="Deleting…" success="Account deleted." onConfirm={async () => { await api(`/admin/users/${u.id}`, { method: 'DELETE' }); resource.refresh(); }}>Delete</ConfirmButton> },
       ]} />}
       {tab === 'requests' && <DataTable rows={find(data.requests, 'first_name', 'last_name', 'organ', 'hospital_name')} emptyTitle="No requests" columns={[
         { key: 'first_name', header: 'Member', render: (r) => <>{r.first_name} {r.last_name}<small>#{r.id}</small></> },
@@ -51,7 +49,7 @@ export function Admin() {
         { key: 'verification', header: 'Verification', render: (r) => <Status value={r.verification} /> },
         { key: 'priority', header: 'Priority', render: (r) => r.priority ? <Status value={r.priority} /> : '—' },
         { key: 'status', header: 'Status', render: (r) => <Status value={r.status} /> },
-        { key: 'action', header: 'Action', sortable: false, render: (r) => <Link className="text-link" to={`/requests/${r.id}`}>{t('Review')}</Link> },
+        { key: 'action', header: 'Action', sortable: false, render: (r) => <Link className="text-link" to={`/requests/${r.id}`}>Review</Link> },
       ]} />}
       {tab === 'pledges' && <DataTable rows={find(data.pledges, 'first_name', 'last_name', 'organ', 'city', 'state')} emptyTitle="No pledges" columns={[
         { key: 'first_name', header: 'Donor', render: (p) => <>{p.first_name} {p.last_name}<small>Pledge #{p.id} · {p.blood_group}</small></> },

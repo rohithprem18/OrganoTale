@@ -85,7 +85,7 @@ Demo accounts from `npm run seed`:
 
 Signed-in members have separate **My pledges**, **My requests**, **Matches**, and **Records** views. Hospital staff use the request split view and matches board. Admin charts include pending hospitals by state. Public pages retain the marketing layout.
 
-**Settings** saves the language, reduced-motion preference, and opt-in email alerts. Hindi, Tamil, and Telugu cover navigation, statuses, form labels, and preferences; some longer guidance remains in English. Pledge and request drafts are saved on the device, including when navigating away, and cleared on logout. Consent is never restored from a draft.
+**Settings** saves opt-in email alerts.
 
 PIN lookup uses the [PostalPinCode directory](https://www.postalpincode.in/Api-Details) through the API, with a timeout, limited cache, and manual entry fallback. It suggests the postal district as the city; users should check and correct that suggestion. PIN codes spanning multiple districts offer a choice. No clinical information is sent to the lookup service.
 

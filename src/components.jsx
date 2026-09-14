@@ -2,7 +2,6 @@ import { createContext, Fragment, useCallback, useContext, useEffect, useId, use
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CaretDown, CaretUp, CaretUpDown, Check, CheckCircle, FloppyDisk, Heartbeat, LockSimple, MagnifyingGlass, SealCheck, WarningCircle, X } from '@phosphor-icons/react';
 import { api } from './api';
-import { useT } from './i18n';
 
 export const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -71,14 +70,13 @@ export function useAsync() {
 
 // ---------- Brand ----------
 export function LogoMark({ size = 38 }) {
-  return <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="14" fill="#0f766e" /><path d="M24 36S9.5 27.6 9.5 18.6A7.6 7.6 0 0 1 24 14.8a7.6 7.6 0 0 1 14.5 3.8C38.5 27.6 24 36 24 36Z" fill="none" stroke="#fff" strokeWidth="3" strokeLinejoin="round" /><path d="M14.5 23h5.5l2.6-5 3.6 9.5 2.6-4.5h5" fill="none" stroke="#b9f0e6" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="14" fill="#f4b942" /><path d="M24 36S9.5 27.6 9.5 18.6A7.6 7.6 0 0 1 24 14.8a7.6 7.6 0 0 1 14.5 3.8C38.5 27.6 24 36 24 36Z" fill="none" stroke="#29271f" strokeWidth="3" strokeLinejoin="round" /><path d="M14.5 23h5.5l2.6-5 3.6 9.5 2.6-4.5h5" fill="none" stroke="#29271f" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 export function Logo() {
   return <Link className="logo" to="/" aria-label="OrganoTale home"><span className="logo-mark"><LogoMark /></span><span>Organo<span className="logo-light">Tale</span><small>A little of you. A life for someone.</small></span></Link>;
 }
 export function VerifiedBadge() {
-  const t = useT();
-  return <span className="badge-verified"><SealCheck size={13} weight="fill" /> {t('Verified hospital')}</span>;
+  return <span className="badge-verified"><SealCheck size={13} weight="fill" /> Verified hospital</span>;
 }
 export function PrivateHint({ children = 'Private: visible only to you, your hospital, and administrators' }) {
   return <span className="private-hint"><LockSimple size={13} /> {children}</span>;
@@ -106,9 +104,8 @@ export function FormShell({ eyebrow, title, description, children, aside, back =
 }
 const STATUS_LABELS = { 'Not Emergency': 'Standard', deceased: 'After death' };
 export function Status({ value, label }) {
-  const t = useT();
   const key = value || 'pending';
-  return <span className={`status status-${key.toLowerCase().replaceAll(' ', '-')}`}>{label || t(STATUS_LABELS[key] || key)}</span>;
+  return <span className={`status status-${key.toLowerCase().replaceAll(' ', '-')}`}>{label || (STATUS_LABELS[key] || key)}</span>;
 }
 export function Stats({ items }) {
   return <div className="stats-grid">{items.map(([label, value, Icon]) => <div className="stat" key={label}><div><span>{label}</span><strong>{value}</strong></div><Icon size={26} weight="light" /></div>)}</div>;
@@ -117,13 +114,11 @@ export function SearchBox({ value, onChange, placeholder = 'Search by name, orga
   return <label className="search-box"><MagnifyingGlass size={20} /><input aria-label={placeholder} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} /></label>;
 }
 export function NextStep({ icon: Icon, title, body, action, to, onClick, calm = false }) {
-  const t = useT();
-  return <section className={`next-step ${calm ? 'calm' : ''}`} aria-label={t('Your next step')}><span className="next-icon"><Icon size={24} /></span><div><span className="eyebrow">{t('Your next step')}</span><h2>{title}</h2>{body && <p>{body}</p>}</div>{action && (to ? <Link className="button" to={to}>{action}<ArrowRight size={18} /></Link> : <button type="button" className="button" onClick={onClick}>{action}<ArrowRight size={18} /></button>)}</section>;
+  return <section className={`next-step ${calm ? 'calm' : ''}`} aria-label="Your next step"><span className="next-icon"><Icon size={24} /></span><div><span className="eyebrow">Your next step</span><h2>{title}</h2>{body && <p>{body}</p>}</div>{action && (to ? <Link className="button" to={to}>{action}<ArrowRight size={18} /></Link> : <button type="button" className="button" onClick={onClick}>{action}<ArrowRight size={18} /></button>)}</section>;
 }
 
 // ---------- Confirmation dialog ----------
 export function ConfirmButton({ onConfirm, children = 'Delete', title, description = 'This cannot be undone.', confirmLabel = 'Delete', busyLabel = 'Working…', danger = true, success, className }) {
-  const t = useT();
   const dialog = useRef(null);
   const titleId = useId();
   const action = useAsync();
@@ -132,7 +127,7 @@ export function ConfirmButton({ onConfirm, children = 'Delete', title, descripti
     <button type="button" className={className || `text-button ${danger ? 'danger' : ''}`} onClick={() => dialog.current?.showModal()}>{children}</button>
     <dialog ref={dialog} className="modal" aria-labelledby={titleId}>
       <div className="modal-body"><h3 id={titleId}>{title || confirmLabel}</h3><p>{description}</p><Notice>{action.error}</Notice></div>
-      <div className="modal-actions"><button type="button" className="button secondary" onClick={close}>{t('Cancel')}</button><button type="button" className={`button ${danger ? 'danger-button' : ''}`} disabled={action.busy} onClick={() => action.run(async () => { await onConfirm(); close(); }, { success })}>{action.busy ? busyLabel : confirmLabel}</button></div>
+      <div className="modal-actions"><button type="button" className="button secondary" onClick={close}>Cancel</button><button type="button" className={`button ${danger ? 'danger-button' : ''}`} disabled={action.busy} onClick={() => action.run(async () => { await onConfirm(); close(); }, { success })}>{action.busy ? busyLabel : confirmLabel}</button></div>
     </dialog>
   </>;
 }
@@ -161,19 +156,17 @@ function useFieldValidation(props) {
 }
 // options: plain strings, or { value, label } objects.
 export function Field({ label, name, options, wide = false, multiline = false, required = true, hint, ...props }) {
-  const t = useT();
   const id = useId();
   const [error, handlers] = useFieldValidation(props);
   const shared = { id, name, required, ...props, ...handlers, 'aria-invalid': error ? true : undefined, 'aria-describedby': error ? `${id}-error` : hint ? `${id}-hint` : undefined };
   const control = options
-    ? <select {...shared}><option value="">{t('Select')} {t(label)}</option>{options.map((o) => typeof o === 'object' ? <option key={o.value} value={o.value}>{t(o.label)}</option> : <option key={o} value={o}>{t(o)}</option>)}</select>
+    ? <select {...shared}><option value="">Select {label}</option>{options.map((o) => typeof o === 'object' ? <option key={o.value} value={o.value}>{o.label}</option> : <option key={o} value={o}>{o}</option>)}</select>
     : multiline ? <textarea rows={3} maxLength={1500} {...shared} /> : <input {...shared} />;
-  return <div className={`field ${wide ? 'wide' : ''} ${error ? 'invalid' : ''}`}><label htmlFor={id}>{t(label)}{!required && <span> ({t('optional')})</span>}</label>{control}{error ? <span id={`${id}-error`} className="field-error">{error}</span> : hint && <span id={`${id}-hint`} className="field-hint">{hint}</span>}</div>;
+  return <div className={`field ${wide ? 'wide' : ''} ${error ? 'invalid' : ''}`}><label htmlFor={id}>{label}{!required && <span> (optional)</span>}</label>{control}{error ? <span id={`${id}-error`} className="field-error">{error}</span> : hint && <span id={`${id}-hint`} className="field-hint">{hint}</span>}</div>;
 }
 
 // Searchable dropdown. options: [{ value, label, detail? }]. Submits the chosen value under `name`.
 export function Combobox({ label, name, options, defaultValue = '', value: controlled, onChange, required = true, placeholder, wide = false, hint }) {
-  const t = useT();
   const id = useId();
   const listId = `${id}-list`;
   const [own, setOwn] = useState(defaultValue);
@@ -209,7 +202,7 @@ export function Combobox({ label, name, options, defaultValue = '', value: contr
     else if (e.key === 'Escape') setOpen(false);
   };
   return <div className={`field ${wide ? 'wide' : ''} ${error ? 'invalid' : ''}`}>
-    <label htmlFor={id}>{t(label)}{!required && <span> ({t('optional')})</span>}</label>
+    <label htmlFor={id}>{label}{!required && <span> (optional)</span>}</label>
     <div className="combobox">
       <input ref={input} id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && matches[highlight] ? `${listId}-${highlight}` : undefined} aria-invalid={error ? true : undefined} autoComplete="off" placeholder={placeholder} value={query} required={required}
         onChange={(e) => { setQuery(e.target.value); setError(''); setOpen(true); setHighlight(0); if (controlled === undefined) setOwn(''); onChange?.(''); }}
@@ -275,7 +268,6 @@ export function useDraftSaver(key) {
 // ---------- Step-by-step form ----------
 // steps: [{ title, content: node | (values) => node, blocked? }]. All steps stay mounted so the form submits every field.
 export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', draft, onDiscard, error }) {
-  const t = useT();
   const form = useRef(null);
   const stepRefs = useRef([]);
   const [index, setIndex] = useState(0);
@@ -303,22 +295,20 @@ export function Wizard({ steps, onSubmit, busy = false, submitLabel = 'Submit', 
     onSubmit(current);
   };
   return <form ref={form} noValidate onSubmit={submit} onInput={() => draft?.save(form.current)} onChange={() => draft?.save(form.current)}>
-    <ol className="wizard-steps" style={{ '--steps': steps.length }}>{steps.map((step, i) => <li key={step.title} className={i < index ? 'done' : i === index ? 'current' : ''} aria-current={i === index ? 'step' : undefined}><span>{t(step.title)}</span></li>)}</ol>
-    <div className="wizard-meta"><span>Step {index + 1} of {steps.length} · <strong>{t(steps[index].title)}</strong></span>{draft?.savedAt && <span className="field-hint"><FloppyDisk size={14} /> {t('Draft saved')} on this device · <button type="button" className="text-button" onClick={onDiscard}>{t('Discard draft')}</button></span>}</div>
-    {steps.map((step, i) => <div key={step.title} ref={(el) => { stepRefs.current[i] = el; }} className="wizard-step" tabIndex={-1} aria-label={t(step.title)} hidden={i !== index}>{typeof step.content === 'function' ? step.content(values) : step.content}</div>)}
+    <ol className="wizard-steps" style={{ '--steps': steps.length }}>{steps.map((step, i) => <li key={step.title} className={i < index ? 'done' : i === index ? 'current' : ''} aria-current={i === index ? 'step' : undefined}><span>{step.title}</span></li>)}</ol>
+    <div className="wizard-meta"><span>Step {index + 1} of {steps.length} · <strong>{(steps[index].title)}</strong></span>{draft?.savedAt && <span className="field-hint"><FloppyDisk size={14} /> Draft saved on this device · <button type="button" className="text-button" onClick={onDiscard}>Discard draft</button></span>}</div>
+    {steps.map((step, i) => <div key={step.title} ref={(el) => { stepRefs.current[i] = el; }} className="wizard-step" tabIndex={-1} aria-label={step.title} hidden={i !== index}>{typeof step.content === 'function' ? step.content(values) : step.content}</div>)}
     <Notice>{error}</Notice>
-    <div className="wizard-actions">{index > 0 && <button type="button" className="button secondary" onClick={() => go(index - 1)}><ArrowLeft size={18} /> {t('Back')}</button>}<span className="spacer" /><button className="button" disabled={busy || steps[index].blocked}>{last ? (busy ? 'Saving…' : submitLabel) : t('Next')}<ArrowRight size={18} /></button></div>
+    <div className="wizard-actions">{index > 0 && <button type="button" className="button secondary" onClick={() => go(index - 1)}><ArrowLeft size={18} /> Back</button>}<span className="spacer" /><button className="button" disabled={busy || steps[index].blocked}>{last ? (busy ? 'Saving…' : submitLabel) : 'Next'}<ArrowRight size={18} /></button></div>
   </form>;
 }
 export function ReviewList({ items }) {
-  const t = useT();
-  return <dl className="review-list">{items.filter(Boolean).map(([term, value]) => <div key={term}><dt>{t(term)}</dt><dd>{value || '—'}</dd></div>)}</dl>;
+  return <dl className="review-list">{items.filter(Boolean).map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value || '—'}</dd></div>)}</dl>;
 }
 
 // ---------- Journey tracker ----------
 export function Journey({ steps, compact = false }) {
-  const t = useT();
-  return <ol className={`journey ${compact ? 'compact' : ''}`} style={{ '--steps': steps.length }}>{steps.map((step) => <li key={step.label} className={step.state} aria-current={step.state === 'current' ? 'step' : undefined}><span className="marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} weight="bold" /> : step.state === 'failed' ? <X size={13} weight="bold" /> : null}</span><span>{t(step.label)}</span></li>)}</ol>;
+  return <ol className={`journey ${compact ? 'compact' : ''}`} style={{ '--steps': steps.length }}>{steps.map((step) => <li key={step.label} className={step.state} aria-current={step.state === 'current' ? 'step' : undefined}><span className="marker" aria-hidden="true">{step.state === 'done' ? <Check size={13} weight="bold" /> : step.state === 'failed' ? <X size={13} weight="bold" /> : null}</span><span>{step.label}</span></li>)}</ol>;
 }
 export function requestJourney(request, matches = []) {
   const related = matches.filter((m) => m.request_id === request.id);
@@ -358,8 +348,7 @@ export function whyRanked(breakdown) {
   return top.length ? top.join(', ') : 'no priority factors yet';
 }
 export function ScoreBreakdown({ score, breakdown, note }) {
-  const t = useT();
-  return <div className="score"><div className="score-summary"><ScoreRing score={score} /><p className="why"><strong>{t('Why this rank')}:</strong> {whyRanked(breakdown)}.{note && <> {note}</>}</p></div>{breakdown.map((item) => <div className="score-row" key={item.factor}><span>{item.label}</span><strong>{item.points}/{item.max}</strong><div className="score-bar" aria-hidden="true"><i style={{ width: `${item.max ? (item.points / item.max) * 100 : 0}%` }} /></div></div>)}</div>;
+  return <div className="score"><div className="score-summary"><ScoreRing score={score} /><p className="why"><strong>Why this rank:</strong> {whyRanked(breakdown)}.{note && <> {note}</>}</p></div>{breakdown.map((item) => <div className="score-row" key={item.factor}><span>{item.label}</span><strong>{item.points}/{item.max}</strong><div className="score-bar" aria-hidden="true"><i style={{ width: `${item.max ? (item.points / item.max) * 100 : 0}%` }} /></div></div>)}</div>;
 }
 export function FlagList({ flags }) {
   return flags?.length ? <ul className="flag-list" aria-label="Screening flags for clinical review">{flags.map((flag) => <li key={flag}>{flag}</li>)}</ul> : null;
@@ -394,12 +383,11 @@ export function DataTable({ columns, rows, rowKey = (row) => row.id, pageSize = 
 // ---------- Horizontal bar chart (single series) ----------
 // data: [{ label, value, detail? }]. Every value is also available through the table view.
 export function BarChart({ title, subtitle, data, format = (v) => String(v), emptyText = 'No data yet.' }) {
-  const t = useT();
   const [table, setTable] = useState(false);
   const [hover, setHover] = useState(null);
   const max = Math.max(1, ...data.map((d) => d.value));
   return <section className="chart-card" aria-label={title}>
-    <div className="chart-head"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>{data.length > 0 && <button type="button" className="text-button" onClick={() => setTable(!table)}>{table ? t('Show chart') : t('Show table')}</button>}</div>
+    <div className="chart-head"><div><h3>{title}</h3>{subtitle && <p>{subtitle}</p>}</div>{data.length > 0 && <button type="button" className="text-button" onClick={() => setTable(!table)}>{table ? 'Show chart' : 'Show table'}</button>}</div>
     {!data.length ? <p className="chart-empty">{emptyText}</p> : table
       ? <div className="table-wrap"><table><thead><tr><th scope="col">Category</th><th scope="col">Value</th><th scope="col">Detail</th></tr></thead><tbody>{data.map((d) => <tr key={d.label}><td>{d.label}</td><td>{format(d.value)}</td><td>{d.detail || '—'}</td></tr>)}</tbody></table></div>
       : <ul className="bars">{data.map((d, i) => <li key={d.label} className="bar-row"><span className="bar-label">{d.label}</span><div className="bar-track" tabIndex={0} aria-label={`${d.label}: ${format(d.value)}${d.detail ? `, ${d.detail}` : ''}`} onPointerEnter={() => setHover(i)} onPointerLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}><span className="bar" style={{ width: `${(d.value / max) * 100}%` }} /><span className="bar-value">{format(d.value)}</span>{hover === i && <span className="chart-tooltip" role="tooltip"><strong>{format(d.value)}</strong>{d.label}{d.detail ? ` · ${d.detail}` : ''}</span>}</div></li>)}</ul>}

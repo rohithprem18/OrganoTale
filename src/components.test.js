@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createServer } from 'vite';
 
-let server, dom, React, createRoot, components, language, root, host;
+let server, dom, React, createRoot, components, root, host;
 before(async () => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
   for (const key of ['window', 'document', 'HTMLElement', 'Event', 'FormData', 'localStorage']) globalThis[key] = dom.window[key];
@@ -15,7 +15,6 @@ before(async () => {
   ({ createRoot } = await import('react-dom/client'));
   server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
   components = await server.ssrLoadModule('/src/components.jsx');
-  language = await server.ssrLoadModule('/src/i18n.jsx');
 });
 afterEach(async () => {
   if (root) await React.act(() => root.unmount());
@@ -66,20 +65,6 @@ test('draft flushes on navigation and never stores consent', async () => {
   await React.act(() => root.unmount()); root = null;
   assert.equal(readDraft('test-user').values.organ, 'Kidney');
   assert.equal(readDraft('test-user').values.consent, undefined);
-});
-
-test('translated dropdown labels preserve canonical API values and unique accessible IDs', async () => {
-  localStorage.setItem('organotale:language', 'hi');
-  const { Field } = components;
-  await mount(h(language.LanguageProvider, null, h(React.Fragment, null,
-    h(Field, { label: 'Organ', name: 'organ', options: ['Kidney'] }),
-    h(Field, { label: 'Organ', name: 'organ', options: ['Liver'] }),
-  )));
-  const controls = host.querySelectorAll('select');
-  assert.notEqual(controls[0].id, controls[1].id);
-  assert.equal(host.querySelector('label').textContent, 'अंग');
-  assert.equal(controls[0].options[1].textContent, 'गुर्दा');
-  assert.equal(controls[0].options[1].value, 'Kidney');
 });
 
 test('optimistic mutations update immediately and restore data when the server rejects', async () => {
