@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowUpRight, Bell, ChartBar, ClipboardText, ClockCounterClockwise, HandHeart, Handshake, Heartbeat, Hospital, IdentificationCard, Kanban, List, Queue, SignOut, SquaresFour, UsersThree, X } from '@phosphor-icons/react';
+import { ArrowUpRight, Bell, ChartBar, ClockCounterClockwise, HandHeart, Handshake, Heartbeat, Hospital, IdentificationCard, Kanban, List, Queue, SignOut, SquaresFour, UsersThree, X } from '@phosphor-icons/react';
 import { api } from './api';
 import { AuthContext, useAuth, Logo, Loading, Notice, ButtonLink, homeFor, useResource, ToastProvider, timeAgo, clearAllDrafts } from './components';
 import { Home, FAQ, Vision, Contact, Policy } from './pages/Public';
@@ -41,7 +41,7 @@ function PublicLayout() {
 
 // ---------- Signed-in app ----------
 const NAVIGATION = {
-  member: [['Dashboard', '/dashboard', SquaresFour], ['My pledges', '/pledges', HandHeart], ['My requests', '/requests?mine=true', Heartbeat], ['Matches', '/matches', Handshake], ['Records', '/records', ClipboardText]],
+  member: [['Dashboard', '/dashboard', SquaresFour], ['My pledges', '/pledges', HandHeart], ['My requests', '/requests?mine=true', Heartbeat], ['Matches', '/matches', Handshake]],
   hospital: [['Patient queue', '/hospital', Queue], ['Matches', '/hospital?tab=matches', Kanban], ['Report a death', '/hospital?tab=registry', IdentificationCard]],
   admin: [['Overview', '/admin', ChartBar], ['Hospitals', '/admin?tab=hospitals', Hospital], ['Members', '/admin?tab=members', UsersThree], ['Requests', '/admin?tab=requests', Heartbeat], ['Pledges', '/admin?tab=pledges', HandHeart], ['Matches', '/admin?tab=matches', Handshake], ['Audit log', '/admin?tab=audit', ClockCounterClockwise]],
 };

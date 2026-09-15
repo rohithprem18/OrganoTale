@@ -4,6 +4,7 @@ import { ArrowRight, ClipboardText, Handshake, Heartbeat, Hourglass, Identificat
 import { api } from '../api';
 import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
 import { PRIORITIES } from '../../shared/options';
+import { ExportPdfButton } from '../ExportPdf';
 
 const capitalize = (value) => value[0].toUpperCase() + value.slice(1);
 const requestBadge = (r) => r.status === 'closed' ? 'closed' : r.verification === 'verified' ? r.priority : r.verification;
@@ -34,7 +35,7 @@ function HospitalWorkspace({ hospital }) {
   const open = (tab) => setParams(tab === 'queue' ? {} : { tab });
   const refreshAll = () => { requests.refresh(); matches.refresh(); };
   return <div className="screen">
-    <AppHeader title={VIEWS[view]} subtitle={`${hospital.name} · ${hospital.city}, ${hospital.state}`} />
+    <AppHeader title={VIEWS[view]} subtitle={`${hospital.name} · ${hospital.city}, ${hospital.state}`} actions={<ExportPdfButton kind="hospital" />} />
     <Notice>{requests.error || matches.error}</Notice>
     {view !== 'registry' && <StatStrip items={[
       { label: 'Need verification', value: pending.length, icon: ClipboardText, onClick: pending.length ? () => select(pending[0].id) : undefined },

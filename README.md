@@ -14,6 +14,18 @@ Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typ
 
 ## How matching works
 
+### PDF reports
+
+Every signed-in workspace has an **Export PDF** button that builds a structured, paginated report in the browser: a branded cover with summary figures, a table of contents with page numbers, and a section per topic.
+
+| Who | Where | Report contents |
+|-----|-------|-----------------|
+| Member | Dashboard | Profile, pledges, organ requests, matches, donation records |
+| Hospital | Every hospital page | Hospital profile, patient requests, ranked donors for each verified open request, matches |
+| Admin | Every admin page | Overview figures, hospitals, members and staff, requests, pledges, matches, donation records, audit log |
+
+Every page carries a confidentiality footer and "Page x of y".
+
 ### Donor status in Settings
 
 Members can report **Alive** or **Deceased** under **Settings → Donor status**. Alive donors can create living-donation pledges for the supported organs or register future after-death pledges. Deceased donors can pledge any organ in the after-death registry; living donation is blocked in both the form and API.
