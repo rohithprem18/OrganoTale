@@ -12,34 +12,33 @@
 [![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)](https://expressjs.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)](https://neon.tech)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-38%20passing-2ea44f?logo=checkmarx&logoColor=white)](#-scripts)
-[![License: MIT](https://img.shields.io/badge/license-MIT-f4be50)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-38%20passing-2ea44f?logo=checkmarx&logoColor=white)](#scripts)
 
-[Live demo](https://organotale.vercel.app) · [Quick start](#-quick-start) · [How matching works](#-how-matching-works)
+[Live demo](https://organotale.vercel.app) · [Quick start](#quick-start) · [How matching works](#how-matching-works)
 
 </div>
 
 ---
 
-## ✨ Features
+## Features
 
-- 🫀 **Pledge once** – living or after-death pledges through a guided form with draft autosave
-- 🏥 **Hospital verification** – treating hospitals verify each request and set its medical priority
-- 🎯 **Priority matching** – strict compatibility rules plus a transparent 100-point score
-- 🤝 **Consent first** – donors accept before their contact details are shared; hospitals confirm after medical tests
-- 🕊️ **After-death donation** – hospitals record a death and choose which pledged organs to donate
-- 📄 **Match PDF** – a structured record of every confirmed match, with each party's privacy protected
-- 🔔 **Alerts and audit log** – in-app notifications, optional email, and every decision on the record
+- **Pledge once** – living or after-death pledges through a guided form with draft autosave
+- **Hospital verification** – treating hospitals verify each request and set its medical priority
+- **Priority matching** – strict compatibility rules plus a transparent 100-point score
+- **Consent first** – donors accept before their contact details are shared; hospitals confirm after medical tests
+- **After-death donation** – hospitals record a death and choose which pledged organs to donate
+- **Match PDF** – a structured record of every confirmed match, with each party's privacy protected
+- **Alerts and audit log** – in-app notifications, optional email, and every decision on the record
 
-## 👥 Roles
+## Roles
 
 | Role | Portal | Responsibilities |
 |---|---|---|
-| 🙋 Member | `/dashboard` | Pledge organs, request an organ for a patient, accept or decline proposed matches |
-| 🏥 Hospital | `/hospital` | Verify requests, set priority, review ranked donors, propose and confirm matches, report deaths |
-| 🛡️ Admin | `/admin` | Verify or suspend hospitals, oversee pledges and matches, review the audit log |
+| Member | `/dashboard` | Pledge organs, request an organ for a patient, accept or decline proposed matches |
+| Hospital | `/hospital` | Verify requests, set priority, review ranked donors, propose and confirm matches, report deaths |
+| Admin | `/admin` | Verify or suspend hospitals, oversee pledges and matches, review the audit log |
 
-## 🎯 How matching works
+## How matching works
 
 **Hard rules**: a pairing is suggested only when the organ matches, blood groups are compatible, living donors are 18+ and pledge an organ a living person can give, after-death organs have been reported available by a hospital (heart and lungs within the same state), and the donor is not already in an active match.
 
@@ -59,7 +58,7 @@
 > [!NOTE]
 > Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typing, and eligibility are decided by the transplant team.
 
-## 🧰 Tech stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
@@ -69,7 +68,7 @@
 | Auth | scrypt password hashing · HttpOnly, SameSite=Strict session cookies |
 | Hosting | Vercel |
 
-## 🚀 Quick start
+## Quick start
 
 Requires **Node.js 22.13+**. No database server is needed locally.
 
@@ -91,7 +90,7 @@ npm run dev     # web http://127.0.0.1:5178 · api http://127.0.0.1:3008
 | Hospital | `hospital@organdonation.local` | `DemoHospital123!` |
 | Admin | `admin@organdonation.local` | `DemoAdmin123!` |
 
-## ⚙️ Configuration
+## Configuration
 
 | Variable | Required | Purpose |
 |---|---|---|
@@ -102,7 +101,7 @@ npm run dev     # web http://127.0.0.1:5178 · api http://127.0.0.1:3008
 
 See [`.env.example`](.env.example) for details.
 
-## 📜 Scripts
+## Scripts
 
 | Command | Purpose |
 |---|---|
@@ -112,7 +111,7 @@ See [`.env.example`](.env.example) for details.
 | `npm run build` | Production build |
 | `npm run make-admin -- <email>` | Promote an account to administrator (`--production` for the live database) |
 
-## ☁️ Deploy
+## Deploy
 
 Pushing to `main` deploys to Vercel. For a new setup, connect a **Postgres (Neon)** database in Vercel Storage; migrations run automatically. Production starts empty, so create the first administrator:
 
@@ -121,7 +120,7 @@ npx vercel env pull .env.local
 npm run make-admin -- you@example.com --production
 ```
 
-## 📁 Project structure
+## Project structure
 
 ```text
 api/            Vercel Function entry
@@ -130,10 +129,6 @@ shared/         Organs, blood groups, priorities, states
 src/            React app: pages, components, PDF export
 ```
 
-## ⚖️ Legal
+## Legal
 
 Buying or selling organs is illegal under India's Transplantation of Human Organs and Tissues Act, 1994. OrganoTale never arranges payment and does not replace statutory approval or allocation processes.
-
-## 📄 License
-
-[MIT](LICENSE) © 2026 Rohith Prem. Builds on the original Organ Donation Management System by Abdullah Al Shafi.
