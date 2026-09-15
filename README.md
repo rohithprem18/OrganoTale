@@ -38,6 +38,43 @@
 | Hospital | `/hospital` | Verify requests, set priority, review ranked donors, propose and confirm matches, report deaths |
 | Admin | `/admin` | Verify or suspend hospitals, oversee pledges and matches, review the audit log |
 
+## User flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Admin
+  actor Hospital
+  actor Requester
+  actor Donor
+  participant App as OrganoTale
+
+  Hospital->>App: Register hospital
+  Admin->>App: Verify hospital
+  Donor->>App: Pledge an organ
+  Requester->>App: Request an organ at a verified hospital
+  App-->>Hospital: New request to verify
+  Hospital->>App: Verify request, set priority and clinical score
+  App-->>Hospital: Ranked compatible donors
+  Hospital->>App: Propose a match
+  App-->>Donor: Match proposed
+  Donor->>App: Accept, sharing contact details
+  App-->>Hospital: Donor accepted
+  Hospital->>App: Confirm after medical tests
+  App-->>Donor: Match confirmed
+  App-->>Requester: Match confirmed
+  Note over Hospital,App: Everyone involved can export the confirmed match PDF
+```
+
+1. **Onboard**: a hospital registers and an administrator verifies it.
+2. **Pledge**: a donor pledges an organ for living donation or after death.
+3. **Request**: a member requests an organ for a patient at a verified hospital.
+4. **Verify and rank**: the hospital verifies the request and sets its medical priority; OrganoTale ranks compatible donors.
+5. **Propose and accept**: the hospital proposes a match; the donor accepts, and only then are contact details shared.
+6. **Confirm**: after medical tests the hospital confirms the match, and the request closes once the needed quantity is met.
+
+**After-death donation**: the hospital records the death and selects the pledged organs to donate. Consent is documented at that point, so the hospital can confirm the match without waiting for a donor response.
+
 ## How matching works
 
 **Hard rules**: a pairing is suggested only when the organ matches, blood groups are compatible, living donors are 18+ and pledge an organ a living person can give, after-death organs have been reported available by a hospital (heart and lungs within the same state), and the donor is not already in an active match.
