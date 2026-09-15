@@ -11,6 +11,7 @@ import { memberRoutes } from './routes/member.js';
 import { hospitalRoutes } from './routes/hospital.js';
 import { adminRoutes } from './routes/admin.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { reportRoutes } from './routes/reports.js';
 import { postalLookup } from './pincode.js';
 import { deliverEmailQueue, validCronToken } from './email.js';
 
@@ -58,6 +59,7 @@ export function createApp(db, { limitAuth = true, lookupPostal = postalLookup() 
   app.get('/api/hospitals', async (req, res) => res.json(await db.prepare("SELECT id, name, city, state FROM hospitals WHERE status='verified' ORDER BY state, city, name").all()));
   app.use('/api/auth', accountRoutes(db));
   app.use('/api/notifications', notificationRoutes(db));
+  app.use('/api/reports', reportRoutes(db));
   app.use('/api/hospital', hospitalRoutes(db));
   app.use('/api/admin', adminRoutes(db));
   app.use('/api', memberRoutes(db));

@@ -14,17 +14,13 @@ Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typ
 
 ## How matching works
 
-### PDF reports
+### Confirmed match PDF
 
-Every signed-in workspace has an **Export PDF** button that builds a structured, paginated report in the browser: a branded cover with summary figures, a table of contents with page numbers, and a section per topic.
+Once a hospital confirms a match, an **Export PDF** button appears on that match for the donor and the recipient (Matches page), the treating hospital (Matches board), and administrators (Matches table). Proposed or declined matches have no PDF.
 
-| Who | Where | Report contents |
-|-----|-------|-----------------|
-| Member | Dashboard | Profile, pledges, organ requests, matches, donation records |
-| Hospital | Every hospital page | Hospital profile, patient requests, ranked donors for each verified open request, matches |
-| Admin | Every admin page | Overview figures, hospitals, members and staff, requests, pledges, matches, donation records, audit log |
+The PDF records the match summary and dates, the recipient request, the donor pledge, the treating hospital, the priority score breakdown, the decision timeline, and a sign-off area. The donor's copy leaves out the recipient's identity and the recipient's copy leaves out the donor's identity, contact details, and screening flags.
 
-Every page carries a confidentiality footer and "Page x of y".
+`GET /api/reports/matches/:id` returns this record to the people involved in a confirmed match, and 409 before confirmation.
 
 ### Donor status in Settings
 

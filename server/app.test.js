@@ -482,3 +482,46 @@ test('a hospital can find a donor by email, mark them deceased, and donate the c
   const match = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: kidneyId }).expect(201)).body;
   assert.equal(match.donor_response, 'accepted');
 });
+
+test('a confirmed match has a PDF record for its donor, recipient, hospital, and admins, each seeing only what they may', async (t) => {
+  const { app, db } = await fixture(t);
+  const h = await hospital(app, db); const otherHospital = await hospital(app, db, 'other@hospital.test');
+  const donor = await member(app, 'report-donor@example.test');
+  const recipient = await member(app, 'report-recipient@example.test');
+  const outsider = await member(app, 'report-outsider@example.test');
+  const pledgeId = (await donor.client.post('/api/pledges').send(pledge()).expect(201)).body.id;
+  const requestId = (await recipient.client.post('/api/requests').send(organRequest(h.id)).expect(201)).body.id;
+  await verify(h, requestId, 'critical');
+  const matchId = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: pledgeId }).expect(201)).body.id;
+  await h.client.get(`/api/reports/matches/${matchId}`).expect(409);
+  await donor.client.patch(`/api/matches/${matchId}/response`).send({ response: 'accepted' }).expect(200);
+  await donor.client.get(`/api/reports/matches/${matchId}`).expect(409);
+  await h.client.patch(`/api/hospital/matches/${matchId}`).send({ status: 'confirmed' }).expect(200);
+
+  await request(app).get(`/api/reports/matches/${matchId}`).expect(401);
+  await outsider.client.get(`/api/reports/matches/${matchId}`).expect(404);
+  await otherHospital.client.get(`/api/reports/matches/${matchId}`).expect(404);
+  await h.client.get('/api/reports/matches/abc').expect(404);
+
+  const staff = (await h.client.get(`/api/reports/matches/${matchId}`).expect(200)).body;
+  assert.equal(staff.viewer, 'hospital'); assert.equal(staff.match.status, 'confirmed');
+  assert.equal(staff.donor.email, 'report-donor@example.test'); assert.ok(Array.isArray(staff.donor.flags));
+  assert.ok(staff.recipient.name); assert.equal(typeof staff.recipient.patient_age, 'number');
+  assert.equal(staff.match.competing_recipients, 1); assert.ok(staff.match.breakdown.length > 0);
+  assert.ok(staff.match.accepted_at && staff.match.confirmed_at);
+  assert.deepEqual(staff.timeline.map((e) => e.action), ['proposed', 'donor_accepted', 'confirmed']);
+  assert.equal(staff.hospital.registration_number, 'REG-staff@hospital.test');
+
+  const forDonor = (await donor.client.get(`/api/reports/matches/${matchId}`).expect(200)).body;
+  assert.equal(forDonor.viewer, 'donor');
+  assert.equal(forDonor.recipient.name, undefined); assert.equal(forDonor.recipient.patient_age, undefined);
+  assert.equal(forDonor.donor.email, 'report-donor@example.test');
+  assert.equal(forDonor.timeline[0].by, 'Test Hospital');
+
+  const forRecipient = (await recipient.client.get(`/api/reports/matches/${matchId}`).expect(200)).body;
+  assert.equal(forRecipient.viewer, 'recipient'); assert.ok(forRecipient.recipient.name);
+  for (const key of ['name', 'email', 'phone', 'age', 'location', 'flags']) assert.equal(forRecipient.donor[key], undefined, key);
+
+  await db.prepare("UPDATE users SET role='admin' WHERE id=?").run(outsider.user.id);
+  assert.equal((await outsider.client.get(`/api/reports/matches/${matchId}`).expect(200)).body.viewer, 'admin');
+});

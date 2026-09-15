@@ -5,7 +5,7 @@ import { api } from '../api';
 import { useAuth, useResource, useAsync, useToast, useDraftSaver, readDraft, Field, Combobox, Wizard, ReviewList, Notice, Loading, FormShell, ButtonLink, Status, SearchBox, ConfirmButton, ReasonDialogButton, NextStep, Journey, requestJourney, matchJourney, DataTable, VerifiedBadge, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, ListRow, formValues, formatDate } from '../components';
 import { BLOOD_GROUPS, ORGANS, URGENCIES, LIVING_ORGANS } from '../../shared/options';
 import { LocationFields } from '../LocationFields';
-import { ExportPdfButton } from '../ExportPdf';
+import { MatchPdfButton } from '../ExportPdf';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const HEALTH_OPTIONS = ['Yes', 'No', 'Not applicable', 'Prefer not to say'];
@@ -80,7 +80,7 @@ export function Dashboard() {
   }
   const s = summary.data;
   return <div className="screen">
-    <AppHeader title={`Welcome, ${user.first_name}`} subtitle="Your pledges, requests, and matches at a glance" actions={<><ExportPdfButton kind="member" /><ButtonLink secondary to="/requests/new">Request an organ</ButtonLink><ButtonLink to="/pledge">Pledge to donate</ButtonLink></>} />
+    <AppHeader title={`Welcome, ${user.first_name}`} subtitle="Your pledges, requests, and matches at a glance" actions={<><ButtonLink secondary to="/requests/new">Request an organ</ButtonLink><ButtonLink to="/pledge">Pledge to donate</ButtonLink></>} />
     {next}
     <Notice>{summary.error || matches.error || mine.error || pledges.error}</Notice>
     <StatStrip items={[
@@ -171,6 +171,7 @@ function MatchDetail({ match, resource }) {
         </dl>
         {match.status === 'declined' && match.decision_reason && <Notice>Reason: {match.decision_reason}</Notice>}
         {waitingOnMe(match) && <div className="decision-bar"><p className="quiet-note">Accepting shares your name, phone number, and email with {match.hospital_name}. A match is not a medical clearance.</p><MatchResponse match={match} resource={resource} /></div>}
+        {match.status === 'confirmed' && <div className="decision-bar"><p className="quiet-note">Download the record of this confirmed match: dates, request, pledge, hospital, score, and decisions.</p><MatchPdfButton id={match.id} /></div>}
       </div>
     </div>
   </Box>;

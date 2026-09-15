@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CheckCircle, Handshake, HandHeart, Heartbeat, Hospital, WarningCircle, XCircle } from '@phosphor-icons/react';
 import { api } from '../api';
 import { describeEvent } from '../audit-text';
-import { ExportPdfButton } from '../ExportPdf';
+import { MatchPdfButton } from '../ExportPdf';
 import { useResource, Notice, Loading, Status, SearchBox, ConfirmButton, ScoreBreakdown, FlagList, DataTable, BarChart, AppHeader, StatStrip, Box, InlineEmpty, formatDate, formatDateTime } from '../components';
 
 const SECTIONS = { overview: 'Overview', hospitals: 'Hospitals', members: 'Members', requests: 'Requests', pledges: 'Pledges', matches: 'Matches', records: 'Records', audit: 'Audit log' };
@@ -26,7 +26,7 @@ export function Admin() {
   // A searchable list that fills the screen; its table scrolls inside the panel.
   const list = (rows, table) => <Box scroll className="grow" head={<><SearchBox value={search} onChange={setSearch} placeholder={`Search ${SECTIONS[tab].toLowerCase()}`} /><span className="results">{rows.length} shown</span></>} bodyClass="flush">{table(rows)}</Box>;
   return <div className="screen">
-    <AppHeader title={SECTIONS[tab]} subtitle={subtitle} actions={<>{headerAction}<ExportPdfButton kind="admin" /></>} />
+    <AppHeader title={SECTIONS[tab]} subtitle={subtitle} actions={headerAction} />
     <Notice>{resource.error}</Notice>
     {!data ? <Loading variant="cards" /> : <>
       {tab === 'overview' && <Overview data={data} analytics={analytics} />}
@@ -77,6 +77,7 @@ export function Admin() {
         { key: 'score', header: 'Score', render: (m) => <>{m.score}<small>rank #{m.recipient_rank}{m.override_reason ? ' · override' : ''}</small></> },
         { key: 'donor_response', header: 'Donor response', render: (m) => <Status value={m.donor_response} /> },
         { key: 'status', header: 'Status', render: (m) => <><Status value={m.status} />{m.decision_reason && <small>{m.decision_reason}</small>}</> },
+        { key: 'report', header: 'Report', sortable: false, render: (m) => m.status === 'confirmed' ? <MatchPdfButton id={m.id} compact /> : '—' },
       ]} />)}
       {tab === 'records' && list(find(data.records, 'first_name', 'last_name', 'organ'), (rows) => <DataTable rows={rows} emptyTitle="No donation records yet." columns={[
         { key: 'first_name', header: 'Member', render: (r) => `${r.first_name} ${r.last_name}` },

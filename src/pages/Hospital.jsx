@@ -4,7 +4,7 @@ import { ArrowRight, ClipboardText, Handshake, Heartbeat, Hourglass, Identificat
 import { api } from '../api';
 import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
 import { PRIORITIES } from '../../shared/options';
-import { ExportPdfButton } from '../ExportPdf';
+import { MatchPdfButton } from '../ExportPdf';
 
 const capitalize = (value) => value[0].toUpperCase() + value.slice(1);
 const requestBadge = (r) => r.status === 'closed' ? 'closed' : r.verification === 'verified' ? r.priority : r.verification;
@@ -35,7 +35,7 @@ function HospitalWorkspace({ hospital }) {
   const open = (tab) => setParams(tab === 'queue' ? {} : { tab });
   const refreshAll = () => { requests.refresh(); matches.refresh(); };
   return <div className="screen">
-    <AppHeader title={VIEWS[view]} subtitle={`${hospital.name} · ${hospital.city}, ${hospital.state}`} actions={<ExportPdfButton kind="hospital" />} />
+    <AppHeader title={VIEWS[view]} subtitle={`${hospital.name} · ${hospital.city}, ${hospital.state}`} />
     <Notice>{requests.error || matches.error}</Notice>
     {view !== 'registry' && <StatStrip items={[
       { label: 'Need verification', value: pending.length, icon: ClipboardText, onClick: pending.length ? () => select(pending[0].id) : undefined },
@@ -163,6 +163,7 @@ function MatchCard({ match, resource, onChanged }) {
     {match.donor_email && <PrivateHint>{match.donor_phone} · {match.donor_email}</PrivateHint>}
     <p className="muted">Score {match.score} · rank #{match.recipient_rank}{match.override_reason ? ' · override recorded' : ''}</p>
     {match.decision_reason && <p className="muted">Note: {match.decision_reason}</p>}
+    {match.status === 'confirmed' && <div className="inline-actions"><MatchPdfButton id={match.id} compact /></div>}
     {match.status === 'proposed' && <div className="inline-actions">
       {match.donor_response === 'accepted'
         ? <ConfirmButton danger={false} className="button small" title={`Confirm match #${match.id}?`} description="Confirm only after crossmatching and medical tests are complete. The donor and requester will be notified." confirmLabel="Confirm match" success="Match confirmed." onConfirm={() => decide({ status: 'confirmed', reason: '' })}>Confirm after tests</ConfirmButton>
