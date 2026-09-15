@@ -68,6 +68,104 @@
 | Auth | scrypt password hashing · HttpOnly, SameSite=Strict session cookies |
 | Hosting | Vercel |
 
+## Architecture
+
+```mermaid
+flowchart TB
+  SPA["Browser<br/>React SPA, jsPDF"]
+  CDN["Vercel CDN<br/>static assets"]
+  API["Vercel Function<br/>Express 5 API"]
+  ENGINE["Matching engine<br/>rules and score"]
+  DB[("PostgreSQL<br/>Neon")]
+  PIN["PostalPinCode API<br/>PIN lookup"]
+  MAIL["Resend<br/>email alerts"]
+
+  SPA -->|"HTML, JS, CSS"| CDN
+  SPA -->|"JSON and session cookie"| API
+  API --> ENGINE
+  API --> DB
+  API --> PIN
+  API --> MAIL
+```
+
+## Database schema
+
+Core tables only. Sessions, donation records, and the email outbox are omitted.
+
+```mermaid
+erDiagram
+  HOSPITALS ||--o{ USERS : "employs staff"
+  USERS ||--o{ REQUESTS : "creates"
+  USERS ||--o{ PLEDGES : "pledges"
+  HOSPITALS ||--o{ REQUESTS : "verifies"
+  REQUESTS ||--o{ MATCHES : "receives"
+  PLEDGES ||--o{ MATCHES : "offered in"
+  HOSPITALS ||--o{ MATCHES : "coordinates"
+  USERS ||--o{ NOTIFICATIONS : "receives"
+  USERS ||--o{ AUDIT_EVENTS : "acts in"
+
+  USERS {
+    int id PK
+    text email UK
+    text role "member, hospital, admin"
+    text blood_group
+    text donor_status "alive, deceased"
+    int hospital_id FK
+  }
+  HOSPITALS {
+    int id PK
+    text name
+    text registration_number UK
+    text state
+    text status "pending, verified, suspended"
+  }
+  REQUESTS {
+    int id PK
+    int user_id FK
+    int hospital_id FK
+    text organ
+    text blood_group
+    text verification "pending, verified, rejected"
+    text priority "critical, urgent, stable"
+    int clinical_score "0 to 40"
+    text status "open, closed"
+  }
+  PLEDGES {
+    int id PK
+    int user_id FK
+    text organ
+    text donor_type "living, deceased"
+    text status "active, matched, withdrawn"
+    int available_hospital_id FK
+  }
+  MATCHES {
+    int id PK
+    int request_id FK
+    int pledge_id FK
+    int hospital_id FK
+    float score
+    int recipient_rank
+    jsonb breakdown
+    text donor_response "pending, accepted, declined"
+    text status "proposed, confirmed, declined"
+  }
+  NOTIFICATIONS {
+    int id PK
+    int user_id FK
+    text kind
+    timestamptz read_at
+  }
+  AUDIT_EVENTS {
+    int id PK
+    int actor_id FK
+    text entity
+    text action
+    jsonb detail
+  }
+```
+
+A pledge can be in only one active match at a time, enforced by a partial unique index. Every verification, proposal, and decision is written to `audit_events`. Migrations are versioned in `server/db.js` and run automatically.
+
 ## Quick start
 
 Requires **Node.js 22.13+**. No database server is needed locally.
