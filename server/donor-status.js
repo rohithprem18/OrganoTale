@@ -1,10 +1,12 @@
 import { audit, notify } from './util.js';
 
+export const DECEASED_REASON = 'Donor reported deceased; living donation cannot proceed';
+
 // Call within a transaction. All donor lifecycle writes lock the user first.
 export async function reportDeceased(tx, userId, actorId) {
   const user = await tx.prepare('SELECT donor_status FROM users WHERE id=? FOR UPDATE').get(userId);
   await tx.prepare("UPDATE users SET donor_status='deceased' WHERE id=?").run(userId);
-  const reason = 'Donor reported deceased; living donation cannot proceed';
+  const reason = DECEASED_REASON;
   const matches = await tx.prepare(`UPDATE matches SET status='declined', donor_response='declined', decision_reason=?, updated_at=now()
     WHERE status='proposed' AND pledge_id IN (SELECT id FROM pledges WHERE user_id=? AND donor_type='living')
     RETURNING id, hospital_id, request_id`).all(reason, userId);

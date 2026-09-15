@@ -439,3 +439,46 @@ test('donor status controls living donation and requires hospital verification f
   assert.equal(history.length, 3);
   assert.equal((await recipient.client.get('/api/auth/me')).body.user.donor_status, 'alive');
 });
+
+test('a hospital can find a donor by email, mark them deceased, and donate the chosen pledged organs', async (t) => {
+  const { app, db } = await fixture(t);
+  const h = await hospital(app, db);
+  const donor = await member(app, 'late-donor@example.test');
+  const recipient = await member(app, 'kidney-recipient@example.test');
+  const kidneyId = (await donor.client.post('/api/pledges').send(pledge()).expect(201)).body.id;
+  const liverId = (await donor.client.post('/api/pledges').send(pledge({ organ: 'Liver' })).expect(201)).body.id;
+  const eyeId = (await donor.client.post('/api/pledges').send(pledge({ organ: 'Eye', donor_type: 'deceased' })).expect(201)).body.id;
+  const requestId = (await recipient.client.post('/api/requests').send(organRequest(h.id)).expect(201)).body.id;
+  await verify(h, requestId);
+  const livingMatch = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: kidneyId }).expect(201)).body.id;
+
+  await recipient.client.get('/api/hospital/deceased?email=late-donor@example.test').expect(403);
+  await h.client.get('/api/hospital/deceased?email=nobody@example.test').expect(404);
+  const found = (await h.client.get('/api/hospital/deceased?email=LATE-DONOR@example.test').expect(200)).body;
+  assert.equal(found.donor.donor_status, 'alive'); assert.equal(found.donor.id, undefined);
+  assert.deepEqual(found.organs.map((o) => [o.organ, o.state]), [['Eye', 'ready'], ['Kidney', 'ready'], ['Liver', 'ready']]);
+
+  const report = { email: 'late-donor@example.test', death_certified: true, consent_documented: true };
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [kidneyId], consent_documented: false }).expect(400);
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [] }).expect(400);
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [9999] }).expect(409);
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [kidneyId, eyeId] }).expect(200);
+
+  assert.equal((await donor.client.get('/api/auth/me')).body.user.donor_status, 'deceased');
+  assert.equal((await db.prepare('SELECT status FROM matches WHERE id=?').get(livingMatch)).status, 'declined');
+  const kidney = await db.prepare('SELECT donor_type, status, available_hospital_id FROM pledges WHERE id=?').get(kidneyId);
+  assert.deepEqual({ ...kidney }, { donor_type: 'deceased', status: 'active', available_hospital_id: h.id });
+  assert.equal((await db.prepare('SELECT status FROM pledges WHERE id=?').get(liverId)).status, 'withdrawn');
+  const after = (await h.client.get('/api/hospital/deceased?email=late-donor@example.test')).body;
+  assert.deepEqual(after.organs.map((o) => [o.organ, o.state]), [['Eye', 'available'], ['Kidney', 'available'], ['Liver', 'ready']]);
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [kidneyId] }).expect(409);
+  // An organ left out at first can still be donated later.
+  await h.client.post('/api/hospital/deceased').send({ ...report, pledge_ids: [liverId] }).expect(200);
+  assert.equal((await db.prepare("SELECT COUNT(*)::int AS n FROM audit_events WHERE entity='user' AND entity_id=? AND action='donor_status_changed'").get(donor.user.id)).n, 1);
+
+  // The closed living match does not block the same kidney going to this patient after death.
+  const [candidate] = (await h.client.get(`/api/hospital/requests/${requestId}/candidates`)).body.candidates;
+  assert.equal(candidate.pledge_id, kidneyId);
+  const match = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: kidneyId }).expect(201)).body;
+  assert.equal(match.donor_response, 'accepted');
+});

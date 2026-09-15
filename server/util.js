@@ -41,7 +41,8 @@ export async function loadMatching(db) {
     FROM requests r JOIN hospitals h ON h.id=r.hospital_id
     WHERE r.status='open' AND r.verification='verified' AND h.status='verified'`).all();
   const active = await db.prepare("SELECT pledge_id FROM matches WHERE status IN ('proposed','confirmed')").all();
-  const declined = await db.prepare("SELECT request_id, pledge_id FROM matches WHERE status='declined'").all();
+  // A living match closed only because the donor died must not block the same organ after death.
+  const declined = await db.prepare("SELECT request_id, pledge_id FROM matches WHERE status='declined' AND decision_reason IS DISTINCT FROM 'Donor reported deceased; living donation cannot proceed'").all();
   const priorDonors = await db.prepare("SELECT DISTINCT p.user_id FROM matches m JOIN pledges p ON p.id=m.pledge_id WHERE m.status='confirmed'").all();
   return {
     pledges,

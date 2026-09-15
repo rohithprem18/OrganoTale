@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, ClipboardText, Handshake, Heartbeat, Hourglass, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react';
+import { ArrowRight, ClipboardText, Handshake, Heartbeat, Hourglass, IdentificationCard, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react';
 import { api } from '../api';
 import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
 import { PRIORITIES } from '../../shared/options';
@@ -19,7 +19,7 @@ export function HospitalPortal() {
   return <HospitalWorkspace hospital={hospital} />;
 }
 
-const VIEWS = { queue: 'Patient queue', matches: 'Matches', registry: 'Donor registry' };
+const VIEWS = { queue: 'Patient queue', matches: 'Matches', registry: 'Report a death' };
 function HospitalWorkspace({ hospital }) {
   const [params, setParams] = useSearchParams();
   const view = VIEWS[params.get('tab')] ? params.get('tab') : 'queue';
@@ -46,7 +46,7 @@ function HospitalWorkspace({ hospital }) {
       ? <Box><InlineEmpty icon={ClipboardText}>No patient requests yet. They appear when members choose {hospital.name} as the treating hospital.</InlineEmpty></Box>
       : <div className="screen-grid queue-layout grow"><RequestQueue rows={rows} selectedId={selectedId} onSelect={select} />{selectedId ? <RequestPane key={selectedId} id={selectedId} matches={matchRows} onChanged={refreshAll} /> : <Box><InlineEmpty>Select a request from the queue.</InlineEmpty></Box>}</div>)}
     {view === 'matches' && <MatchesBoard resource={matches} onChanged={refreshAll} />}
-    {view === 'registry' && <DonorRegistry />}
+    {view === 'registry' && <ReportDeath hospital={hospital} />}
   </div>;
 }
 
@@ -172,16 +172,60 @@ function MatchCard({ match, resource, onChanged }) {
   </article>;
 }
 
-function DonorRegistry() {
+const ORGAN_STATE = {
+  ready: (o) => o.donor_type === 'living' ? 'Pledged for living donation · can be donated after death' : 'After-death pledge',
+  available: (o) => `Available for matching${o.available_hospital_name ? ` at ${o.available_hospital_name}` : ''}`,
+  matched: () => 'Already matched or donated',
+};
+function ReportDeath({ hospital }) {
   const search = useAsync();
-  const [email, setEmail] = useState('');
-  const [results, setResults] = useState(null);
-  const lookup = (value) => search.run(async () => { setResults(await api(`/hospital/donors?email=${encodeURIComponent(value)}`)); setEmail(value); });
-  return <Box scroll className="grow" title="Find an after-death pledge" subtitle="Every search is recorded in the audit log">
-    <p className="muted">Report a pledge available only after death has been certified and consent documented as the law requires. It then enters priority matching from your hospital’s location.</p>
-    <form className="inline-actions" onSubmit={(e) => { e.preventDefault(); lookup(formValues(e.currentTarget).email); }}><Field label="Donor email" name="email" type="email" wide /><button className="button small" disabled={search.busy}><MagnifyingGlass size={16} /> Search</button></form>
-    <Notice>{search.error}</Notice>
-    {results && (results.length ? <div className="table-wrap"><table className="responsive-table"><thead><tr><th>Pledge</th><th>Donor</th><th>Organ</th><th>Blood group</th><th>Age</th><th>Status</th><th>Action</th></tr></thead><tbody>{results.map((p) => <tr key={p.id}><td data-label="Pledge">#{p.id}</td><td data-label="Donor">{p.first_name} {p.last_name}</td><td data-label="Organ">{p.organ}</td><td data-label="Blood group">{p.blood_group}</td><td data-label="Age">{ageFrom(p.dob)}</td><td data-label="Status">{p.available_at ? `Reported by ${p.available_hospital_name}` : 'Registry'}</td><td data-label="Action">{p.available_at ? '—' : <ConfirmButton danger={false} title={`Report pledge #${p.id} available?`} description={`This makes the ${p.organ.toLowerCase()} available for priority matching from your hospital. Do this only after death is certified and consent is documented.`} confirmLabel="Report available" busyLabel="Reporting…" success={`Pledge #${p.id} is now available for priority matching.`} onConfirm={async () => { await api(`/hospital/pledges/${p.id}/availability`, { method: 'POST', body: {} }); await lookup(email); }}>Report available</ConfirmButton>}</td></tr>)}</tbody></table></div>
-      : <InlineEmpty>This email has no active after-death pledges.</InlineEmpty>)}
+  const [record, setRecord] = useState(null);
+  const [version, setVersion] = useState(0);
+  const lookup = (email) => search.run(async () => { setRecord(await api(`/hospital/deceased?email=${encodeURIComponent(email)}`)); setVersion((v) => v + 1); });
+  return <div className="screen-grid side-form grow">
+    <Box title="Find the donor" subtitle="Every search is recorded in the audit log">
+      <form onSubmit={(e) => { e.preventDefault(); lookup(formValues(e.currentTarget).email); }}>
+        <div className="fields one"><Field label="Donor email" name="email" type="email" autoComplete="off" /></div>
+        <Notice>{search.error}</Notice>
+        <div className="form-actions"><button className="button" disabled={search.busy}><MagnifyingGlass size={18} />{search.busy ? 'Searching…' : 'Find donor'}</button></div>
+      </form>
+      <ol className="how-steps">
+        <li>Search for the registered donor by email.</li>
+        <li>Choose the pledged organs to donate.</li>
+        <li>Confirm the death certificate and consent. The organs enter priority matching from {hospital.name}.</li>
+      </ol>
+    </Box>
+    {record ? <DeathReport key={version} record={record} hospital={hospital} onDone={() => lookup(record.donor.email)} />
+      : <Box><InlineEmpty icon={IdentificationCard}>Search for a donor to see their pledged organs.</InlineEmpty></Box>}
+  </div>;
+}
+function DeathReport({ record: { donor, organs }, hospital, onDone }) {
+  const ready = organs.filter((o) => o.state === 'ready');
+  const [chosen, setChosen] = useState(() => new Set(ready.map((o) => o.pledge_id)));
+  const [certified, setCertified] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const deceased = donor.donor_status === 'deceased';
+  const name = `${donor.first_name} ${donor.last_name}`;
+  const toggle = (id) => setChosen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const count = chosen.size;
+  const organWord = count === 1 ? 'organ' : 'organs';
+  const label = deceased ? `Donate ${count} ${organWord}` : `Mark deceased and donate ${count} ${organWord}`;
+  const selected = organs.filter((o) => chosen.has(o.pledge_id)).map((o) => o.organ.toLowerCase()).join(', ');
+  return <Box scroll title={name} subtitle={`${donor.email} · blood group ${donor.blood_group || '—'}${donor.dob ? ` · age ${ageFrom(donor.dob)}` : ''}`} actions={<Status value={deceased ? 'closed' : 'active'} label={deceased ? 'Deceased' : 'Alive'} />}>
+    <h3 className="mini-title">Pledged organs</h3>
+    {organs.length ? <ul className="organ-choices">{organs.map((o) => {
+      const locked = o.state !== 'ready';
+      return <li key={o.pledge_id}><label className={`organ-choice ${locked ? 'locked' : ''}`}><input type="checkbox" disabled={locked} checked={o.state === 'available' || chosen.has(o.pledge_id)} onChange={() => toggle(o.pledge_id)} /><span><strong>{o.organ}</strong><small>{ORGAN_STATE[o.state](o)}</small></span></label></li>;
+    })}</ul> : <InlineEmpty>This donor has not pledged any organs, so there is nothing to donate.</InlineEmpty>}
+    {ready.length > 0 ? <div className="decision-bar">
+      <div className="confirm-checks">
+        <label className="checkbox-label"><input type="checkbox" checked={certified} onChange={(e) => setCertified(e.target.checked)} /><span>Death has been certified as the law requires.</span></label>
+        <label className="checkbox-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>Consent to donate the selected organs is documented.</span></label>
+      </div>
+      <p className="quiet-note">{deceased ? '' : 'The donor will be marked deceased and any living-donation matches closed. '}Selected organs enter priority matching from {hospital.name}, {hospital.city}. Organs you leave unticked are not donated.</p>
+      {count > 0 && certified && consent
+        ? <ConfirmButton className="button" title={deceased ? `Donate organs from ${name}?` : `Mark ${name} as deceased?`} description={`These organs will enter priority matching from ${hospital.name}: ${selected}. Continue only after death is certified and consent is documented.`} confirmLabel={label} busyLabel="Saving…" success={`${count} ${count === 1 ? 'organ is' : 'organs are'} now available for priority matching.`} onConfirm={async () => { await api('/hospital/deceased', { method: 'POST', body: { email: donor.email, pledge_ids: [...chosen], death_certified: true, consent_documented: true } }); onDone(); }}>{label}</ConfirmButton>
+        : <button type="button" className="button" disabled>{count > 0 ? label : 'Choose at least one organ'}</button>}
+    </div> : organs.length > 0 && <p className="quiet-note">Every pledged organ has already been made available or matched.</p>}
   </Box>;
 }

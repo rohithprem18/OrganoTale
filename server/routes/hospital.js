@@ -5,7 +5,7 @@ import { hospitalRegisterSchema, verificationSchema, proposalSchema, matchDecisi
 import { HttpError, idOf, audit, notify, loadMatching } from '../util.js';
 import { evaluate, rankRecipients, rankDonors } from '../matching.js';
 import { accountView } from './account.js';
-import { reportDeceased } from '../donor-status.js';
+import { reportDeceased, DECEASED_REASON } from '../donor-status.js';
 
 const HEALTH_FIELDS = ['operation_type', 'operation_desc', 'disease_type', 'disease_desc', 'accident_type', 'accident_desc', 'pregnant', 'menstruation'];
 const DONOR_CONTACT = ['donor_first_name', 'donor_last_name', 'donor_phone', 'donor_email'];
@@ -232,6 +232,64 @@ export function hospitalRoutes(db) {
       await audit(tx, req.user.id, 'pledge', pledge.id, 'reported_available', { hospital_id: req.hospital.id, organ: pledge.organ });
     });
     res.json({ success: true });
+  });
+  // ---- Report a death: find a donor by email, record the death, and donate the chosen pledged organs ----
+  async function deathRecord(q, email) {
+    const donor = await q.prepare("SELECT id, first_name, last_name, email, blood_group, dob, donor_status FROM users WHERE lower(email)=lower(?) AND role<>'hospital'").get(email);
+    if (!donor) return null;
+    // Active and matched pledges, plus living pledges that were closed only because the donor died.
+    const pledges = await q.prepare(`SELECT p.id, p.organ, p.donor_type, p.status, p.available_at, h.name AS available_hospital_name
+      FROM pledges p LEFT JOIN hospitals h ON h.id=p.available_hospital_id
+      WHERE p.user_id=? AND (p.status IN ('active','matched') OR (p.status='withdrawn' AND p.donor_type='living'
+        AND (SELECT e.detail->>'reason' FROM audit_events e WHERE e.entity='pledge' AND e.entity_id=p.id ORDER BY e.id DESC LIMIT 1) = ?))
+      ORDER BY p.organ, p.id`).all(donor.id, DECEASED_REASON);
+    // One choice per organ: an after-death pledge wins over a living one for the same organ.
+    const byOrgan = new Map();
+    for (const p of pledges) {
+      const current = byOrgan.get(p.organ);
+      if (!current || current.donor_type === p.donor_type || (current.donor_type === 'living' && p.donor_type === 'deceased')) byOrgan.set(p.organ, p);
+    }
+    const organs = [...byOrgan.values()].map((p) => ({ organ: p.organ, pledge_id: p.id, donor_type: p.donor_type, state: p.status === 'matched' ? 'matched' : p.available_at ? 'available' : 'ready', available_hospital_name: p.available_hospital_name }));
+    return { donor, organs };
+  }
+  router.get('/deceased', async (req, res) => {
+    const email = z.email('Enter the donor’s email address.').parse(String(req.query.email || '').trim().toLowerCase());
+    const record = await deathRecord(db, email);
+    await audit(db, req.user.id, 'hospital', req.hospital.id, 'donor_lookup', { email, results: record ? record.organs.length : 0 });
+    if (!record) throw new HttpError(404, 'No registered donor has this email.');
+    const { id, ...donor } = record.donor;
+    res.json({ donor, organs: record.organs });
+  });
+  const deathReportSchema = z.object({
+    email: z.email('Enter the donor’s email address.').transform((v) => v.toLowerCase()),
+    pledge_ids: z.array(z.number().int().positive()).min(1, 'Choose at least one pledged organ to donate.').max(20),
+    death_certified: z.literal(true, { message: 'Confirm that death has been certified.' }),
+    consent_documented: z.literal(true, { message: 'Confirm that consent for donation is documented.' }),
+  }).strict();
+  router.post('/deceased', async (req, res) => {
+    const d = deathReportSchema.parse(req.body);
+    try {
+      const donated = await db.transaction(async (tx) => {
+        const locked = await tx.prepare("SELECT id FROM users WHERE lower(email)=lower(?) AND role<>'hospital' FOR UPDATE").get(d.email);
+        if (!locked) throw new HttpError(404, 'No registered donor has this email.');
+        const { donor, organs } = await deathRecord(tx, d.email);
+        const chosen = organs.filter((o) => d.pledge_ids.includes(o.pledge_id));
+        if (chosen.length !== new Set(d.pledge_ids).size || chosen.some((o) => o.state !== 'ready')) throw new HttpError(409, 'Some selected organs can no longer be donated. Search for the donor again.');
+        await reportDeceased(tx, donor.id, req.user.id);
+        for (const o of chosen) {
+          // An organ pledged for living donation is donated after death, with consent confirmed above.
+          await tx.prepare("UPDATE pledges SET donor_type='deceased', status='active', available_hospital_id=?, available_at=now() WHERE id=?").run(req.hospital.id, o.pledge_id);
+          await audit(tx, req.user.id, 'pledge', o.pledge_id, 'reported_available', { hospital_id: req.hospital.id, organ: o.organ, converted_from_living: o.donor_type === 'living' });
+        }
+        const list = chosen.map((o) => o.organ.toLowerCase()).join(', ');
+        await notify(tx, { userIds: [donor.id] }, { kind: 'donor_deceased', title: 'Donor recorded as deceased', body: `${req.hospital.name} recorded the donor’s death and made these pledged organs available for donation: ${list}.`, link: '/pledges' });
+        return chosen;
+      });
+      res.json({ success: true, donated: donated.map((o) => o.organ) });
+    } catch (error) {
+      if (error.code === '23505') throw new HttpError(409, 'This donor already has an active after-death pledge for one of these organs. Search again.');
+      throw error;
+    }
   });
   return router;
 }

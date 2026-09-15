@@ -143,7 +143,7 @@ function describeEvent(e) {
     donor_declined: `The donor declined match ${id}${d.reason ? `: “${d.reason}”` : ''}`,
     confirmed: `${who} confirmed match ${id}${d.request_closed ? ', fulfilling the request' : ''}`,
     declined: `${who} declined match ${id}${d.reason ? `: “${d.reason}”` : ''}`,
-    reported_available: `${who} reported after-death pledge ${id} available`,
+    reported_available: `${who} reported after-death pledge ${id} available${d.converted_from_living ? " (pledged for living donation)" : ""}`,
     donor_lookup: `${who} searched the donor registry for ${d.email} (${d.results} found)`,
     deleted: `${who} deleted the ${d.role} account ${d.email}`,
     promoted_admin: `Account ${id} was made an administrator`,

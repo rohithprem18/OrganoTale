@@ -197,3 +197,14 @@ button.row-item:hover { background: #fffaf0; }
 @media (max-width: 680px) {
   .stat-text span { white-space: normal; }
 }
+
+/* ---------- Report a death ---------- */
+.how-steps { margin: 18px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+.organ-choices { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.organ-choice { display: flex; align-items: flex-start; gap: 10px; height: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.organ-choice:has(input:checked) { border-color: var(--brand-strong); background: var(--brand-soft); }
+.organ-choice.locked { cursor: default; opacity: 0.7; }
+.organ-choice input { margin-top: 3px; accent-color: var(--brand-strong); }
+.organ-choice strong { display: block; font-size: 0.88rem; color: var(--ink); }
+.organ-choice small { display: block; font-size: 0.74rem; color: var(--muted); }
+.confirm-checks { display: grid; gap: 8px; margin-bottom: 10px; }

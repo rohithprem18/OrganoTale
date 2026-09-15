@@ -42,7 +42,7 @@ function PublicLayout() {
 // ---------- Signed-in app ----------
 const NAVIGATION = {
   member: [['Dashboard', '/dashboard', SquaresFour], ['My pledges', '/pledges', HandHeart], ['My requests', '/requests?mine=true', Heartbeat], ['Matches', '/matches', Handshake], ['Records', '/records', ClipboardText]],
-  hospital: [['Patient queue', '/hospital', Queue], ['Matches', '/hospital?tab=matches', Kanban], ['Donor registry', '/hospital?tab=registry', IdentificationCard]],
+  hospital: [['Patient queue', '/hospital', Queue], ['Matches', '/hospital?tab=matches', Kanban], ['Report a death', '/hospital?tab=registry', IdentificationCard]],
   admin: [['Overview', '/admin', ChartBar], ['Hospitals', '/admin?tab=hospitals', Hospital], ['Members', '/admin?tab=members', UsersThree], ['Requests', '/admin?tab=requests', Heartbeat], ['Pledges', '/admin?tab=pledges', HandHeart], ['Matches', '/admin?tab=matches', Handshake], ['Audit log', '/admin?tab=audit', ClockCounterClockwise]],
 };
 function isActive(location, to) {

@@ -22,6 +22,12 @@ Reporting a death requires confirmation, withdraws active living pledges, closes
 
 `GET /api/auth/donor-settings` returns the member's donor status and whether a hospital has recorded availability. `PATCH /api/auth/donor-settings` accepts `{ "donor_status": "alive" | "deceased", "acknowledged": true }` for the signed-in member only.
 
+### Report a death (hospital portal)
+
+Staff of a verified hospital open **Report a death**, type the donor's email, and see every organ that donor pledged. They tick the organs to donate, confirm that death is certified and consent is documented, and submit. The donor is marked **Deceased**, pending living-donation matches close, and the selected organs, including ones pledged for living donation, become after-death donations available for priority matching from that hospital. Organs left unticked can be donated later from the same page.
+
+`GET /api/hospital/deceased?email=` returns the donor and their pledged organs. `POST /api/hospital/deceased` accepts `{ "email", "pledge_ids": [], "death_certified": true, "consent_documented": true }`.
+
 **Hard rules.** A donor and recipient are only paired when all of these pass:
 - Same organ, and the request is open and verified by a verified hospital
 - Blood group compatible (O → all, A → A/AB, B → B/AB, AB → AB; Rh ignored; eye and heart valves need no match)
