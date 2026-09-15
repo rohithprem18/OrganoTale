@@ -153,11 +153,20 @@ export function memberRoutes(db) {
   // ---- Matches, as the donor or the requester ----
   router.get('/matches', async (req, res) => {
     const rows = await db.prepare(`SELECT m.id, m.status, m.donor_response, m.decision_reason, m.created_at, m.updated_at, m.request_id, m.pledge_id,
-        r.organ, r.blood_group AS recipient_blood_group, p.donor_type, (p.user_id=?) AS is_donor,
+        m.score, m.recipient_rank, m.breakdown,
+        r.organ, r.blood_group AS recipient_blood_group, r.quantity, p.donor_type, (p.user_id=?) AS is_donor,
         h.name AS hospital_name, h.city AS hospital_city, h.state AS hospital_state, h.phone AS hospital_phone
       FROM matches m JOIN pledges p ON p.id=m.pledge_id JOIN requests r ON r.id=m.request_id JOIN hospitals h ON h.id=m.hospital_id
       WHERE p.user_id=? OR r.user_id=? ORDER BY m.id DESC`).all(req.user.id, req.user.id, req.user.id);
-    res.json(rows);
+    const events = rows.length ? await db.prepare(`SELECT e.entity_id, e.action, e.created_at, u.role
+      FROM audit_events e LEFT JOIN users u ON u.id=e.actor_id
+      WHERE e.entity='match' AND e.entity_id IN (${rows.map(() => '?').join(',')}) ORDER BY e.id`).all(...rows.map((m) => m.id)) : [];
+    // Members see who acted by role; hospital staff appear as their hospital, never by name.
+    const by = (event, match) => event.action.startsWith('donor_') ? 'Donor' : event.role === 'hospital' ? match.hospital_name : event.role === 'admin' ? 'Administrator' : 'System';
+    res.json(rows.map((match) => ({
+      ...match,
+      events: events.filter((event) => event.entity_id === match.id).map((event) => ({ action: event.action, at: event.created_at, by: by(event, match) })),
+    })));
   });
   router.patch('/matches/:id/response', async (req, res) => {
     const d = donorResponseSchema.parse(req.body);

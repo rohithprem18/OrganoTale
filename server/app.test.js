@@ -522,6 +522,9 @@ test('a confirmed match has a PDF record for its donor, recipient, hospital, and
   assert.equal(forRecipient.viewer, 'recipient'); assert.ok(forRecipient.recipient.name);
   for (const key of ['name', 'email', 'phone', 'age', 'location', 'flags']) assert.equal(forRecipient.donor[key], undefined, key);
 
+  const donorMatches = (await donor.client.get('/api/matches').expect(200)).body;
+  assert.deepEqual(donorMatches[0].events.map((e) => [e.action, e.by]), [['proposed', 'Test Hospital'], ['donor_accepted', 'Donor'], ['confirmed', 'Test Hospital']]);
+  assert.ok(donorMatches[0].breakdown.length > 0); assert.equal(donorMatches[0].donor_email, undefined);
   await db.prepare("UPDATE users SET role='admin' WHERE id=?").run(outsider.user.id);
   assert.equal((await outsider.client.get(`/api/reports/matches/${matchId}`).expect(200)).body.viewer, 'admin');
 });

@@ -6,6 +6,7 @@ import { useAuth, useResource, useAsync, useToast, useDraftSaver, readDraft, Fie
 import { BLOOD_GROUPS, ORGANS, URGENCIES, LIVING_ORGANS } from '../../shared/options';
 import { LocationFields } from '../LocationFields';
 import { MatchPdfButton } from '../ExportPdf';
+import { MatchLayout, MatchCard } from '../MatchView';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const HEALTH_OPTIONS = ['Yes', 'No', 'Not applicable', 'Prefer not to say'];
@@ -150,31 +151,38 @@ export function MyMatches() {
     <Notice>{resource.error}</Notice>
     {!resource.data ? <Loading variant="cards" /> : !rows.length ? <Box><InlineEmpty icon={Handshake}>No matches yet. When a hospital proposes one, it appears here and in your notifications.</InlineEmpty></Box>
       : <div className="screen-grid detail grow">
-        <Box scroll title="All matches" subtitle={`${rows.length} total`} bodyClass="flush"><ul className="rows">{rows.map((m) => <li key={m.id}><button type="button" className={`row-item selectable ${m.id === selectedId ? 'selected' : ''}`} aria-current={m.id === selectedId ? 'true' : undefined} onClick={() => setParams({ match: String(m.id) })}><span className="row-main"><strong>#{m.id} · {m.organ}</strong><small>{m.is_donor ? 'You are the donor' : 'Your request'} · {formatDate(m.created_at)}</small></span>{waitingOnMe(m) ? <Status value="pending" label="Your answer" /> : <Status value={m.status} />}</button></li>)}</ul></Box>
+        <Box scroll title="All matches" subtitle={`${rows.length} total`} bodyClass="flush"><ul className="rows">{rows.map((m) => <li key={m.id}><button type="button" className={`row-item selectable ${m.id === selectedId ? 'selected' : ''}`} aria-current={m.id === selectedId ? 'true' : undefined} onClick={() => setParams({ match: String(m.id) })}><span className="row-main"><strong>#{m.id} · {m.organ}</strong><small>{m.is_donor ? 'You are the donor' : 'Your request'} · {formatDate(m.created_at)}</small></span>{waitingOnMe(m) ? <Status value="pending" label="Your answer" /> : matchPhase(m) === 'accepted' ? <Status value="accepted" label={m.is_donor ? 'You accepted' : 'Donor accepted'} /> : <Status value={m.status} />}</button></li>)}</ul></Box>
         {selected && <MatchDetail key={selected.id} match={selected} resource={resource} />}
       </div>}
   </div>;
 }
-function MatchDetail({ match, resource }) {
-  return <Box scroll title={`Match #${match.id} · ${match.organ}`} subtitle={match.is_donor ? 'You are the donor' : 'Your request'} actions={<Status value={match.status} />}>
-    <div className="detail-columns">
-      <div><h3 className="mini-title">Progress</h3><Journey vertical steps={matchJourney(match)} /></div>
-      <div>
-        <p className="lead">{matchHeadline(match)}</p>
-        <dl className="detail-grid">
-          <div><dt>Hospital</dt><dd>{match.hospital_name}</dd></div>
-          <div><dt>Location</dt><dd>{match.hospital_city}, {match.hospital_state}</dd></div>
-          <div><dt>Hospital phone</dt><dd>{match.hospital_phone}</dd></div>
-          <div><dt>Proposed</dt><dd>{formatDate(match.created_at)}</dd></div>
-          <div><dt>Last update</dt><dd>{formatDate(match.updated_at)}</dd></div>
-          {!match.is_donor && <div><dt>Request</dt><dd><Link className="text-link" to={`/requests/${match.request_id}`}>Open request</Link></dd></div>}
-        </dl>
-        {match.status === 'declined' && match.decision_reason && <Notice>Reason: {match.decision_reason}</Notice>}
-        {waitingOnMe(match) && <div className="decision-bar"><p className="quiet-note">Accepting shares your name, phone number, and email with {match.hospital_name}. A match is not a medical clearance.</p><MatchResponse match={match} resource={resource} /></div>}
-        {match.status === 'confirmed' && <div className="decision-bar"><p className="quiet-note">Download the record of this confirmed match: dates, request, pledge, hospital, score, and decisions.</p><MatchPdfButton id={match.id} /></div>}
-      </div>
-    </div>
-  </Box>;
+function MatchDetail({ match: m, resource }) {
+  const phase = matchPhase(m);
+  const mine = waitingOnMe(m);
+  const stage = phase === 'proposed' ? 'pending' : phase;
+  const stageText = mine ? 'Your answer' : { pending: 'Waiting for donor', accepted: m.is_donor ? 'You accepted' : 'Donor accepted', confirmed: 'Confirmed', declined: 'Declined' }[stage];
+  const next = mine
+    ? { tone: 'accepted', title: `${m.hospital_name} proposed you as a donor.`, body: 'Accepting shares your name, phone number, and email with the hospital. A match is not a medical clearance.', actions: <MatchResponse match={m} resource={resource} /> }
+    : {
+      proposed: { title: 'Waiting for the donor to respond.', body: 'You’ll get a notification as soon as they answer.' },
+      accepted: { title: m.is_donor ? 'You accepted. The hospital will contact you to arrange medical tests.' : 'The donor accepted. The hospital is arranging medical tests.', body: `${m.hospital_name} confirms the match once tests are complete.` },
+      confirmed: { title: `Confirmed on ${formatDate(m.updated_at || m.created_at)}.`, body: 'Download the record of this confirmed match.', actions: <MatchPdfButton id={m.id} /> },
+      declined: { title: 'This match did not go ahead.', body: m.decision_reason ? `Reason: ${m.decision_reason}` : 'No reason was recorded.' },
+    }[phase];
+  return <MatchLayout
+    label={`Match #${m.id}`}
+    title={`${m.organ} match #${m.id}`}
+    subtitle={`${m.is_donor ? 'You are the donor' : 'Your request'} · proposed ${formatDate(m.created_at)}`}
+    stage={stage} stageText={stageText} journey={matchJourney(m)} next={next}
+    cards={<>
+      <MatchCard title="Treating hospital" name={m.hospital_name} facts={[['Location', `${m.hospital_city}, ${m.hospital_state}`], ['Phone', m.hospital_phone]]} />
+      {m.is_donor
+        ? <MatchCard title="Your pledge" name={m.organ} facts={[['Donation', m.donor_type === 'deceased' ? 'After death' : 'Living'], ['Pledge', `#${m.pledge_id}`], ['Recipient', 'Kept confidential']]} />
+        : <MatchCard title="Your request" name={m.organ} facts={[['Blood group', m.recipient_blood_group], ['Quantity', m.quantity], ['Donor', 'Kept confidential']]}><Link className="text-link" to={`/requests/${m.request_id}`}>Open request #{m.request_id} <ArrowRight size={14} /></Link></MatchCard>}
+    </>}
+    score={m.breakdown ? { score: m.score, rank: m.recipient_rank, breakdown: m.breakdown } : null}
+    events={m.events || []}
+  />;
 }
 
 // ---------- Requests list ----------

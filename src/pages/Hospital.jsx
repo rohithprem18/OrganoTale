@@ -5,6 +5,7 @@ import { api } from '../api';
 import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, matchJourney, SearchBox, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
 import { PRIORITIES } from '../../shared/options';
 import { MatchPdfButton } from '../ExportPdf';
+import { MatchLayout, MatchCard } from '../MatchView';
 
 const capitalize = (value) => value[0].toUpperCase() + value.slice(1);
 const requestBadge = (r) => r.status === 'closed' ? 'closed' : r.verification === 'verified' ? r.priority : r.verification;
@@ -147,7 +148,6 @@ const MATCH_FILTERS = [
   ['declined', 'Declined', (m) => m.status === 'declined'],
   ['all', 'All', () => true],
 ];
-const MATCH_EVENTS = { proposed: 'Match proposed', donor_accepted: 'Donor accepted', donor_declined: 'Donor declined', confirmed: 'Confirmed after medical tests', declined: 'Match declined' };
 const matchStage = (m) => m.status === 'confirmed' ? ['confirmed', 'Confirmed'] : m.status === 'declined' ? ['declined', 'Declined'] : m.donor_response === 'accepted' ? ['accepted', 'Ready to confirm'] : ['pending', 'Waiting for donor'];
 const donorName = (m) => m.donor_first_name ? `${m.donor_first_name} ${m.donor_last_name}` : m.donor_label;
 const recipientName = (m) => `${m.requester_first_name} ${m.requester_last_name}`;
@@ -196,41 +196,25 @@ function MatchPane({ match: m, resource, onChanged }) {
     accepted: { title: 'The donor accepted. Confirm once medical tests are complete.', body: 'Confirm only after crossmatching and tissue typing. The donor and the recipient are notified.', actions: <><ConfirmButton danger={false} className="button" title={`Confirm match #${m.id}?`} description="Confirm only after crossmatching and medical tests are complete. The donor and requester will be notified." confirmLabel="Confirm match" success="Match confirmed." onConfirm={() => decide({ status: 'confirmed', reason: '' })}>Confirm after tests</ConfirmButton>{decline}</> },
     pending: { title: `Waiting for ${m.donor_label} to respond.`, body: 'The donor’s name and contact details appear once they accept.', actions: decline },
     confirmed: { title: `Confirmed on ${formatDate(m.updated_at || m.created_at)}.`, body: 'Download the match record for the transplant file.', actions: <MatchPdfButton id={m.id} /> },
-    declined: { title: 'This match was declined.', body: m.decision_reason ? `Reason: ${m.decision_reason}` : 'No reason was recorded.', actions: null },
+    declined: { title: 'This match was declined.', body: m.decision_reason ? `Reason: ${m.decision_reason}` : 'No reason was recorded.' },
   }[stage];
-  return <section className="box scroll match-pane" aria-label={`Match #${m.id}`}>
-    <div className="box-head"><div className="box-title"><h2>{m.organ} for {recipientName(m)}</h2><small>Match #{m.id} · proposed {formatDate(m.created_at)} · request #{m.request_id}</small></div><Status value={stage} label={stageText} /></div>
-    <div className="box-sub"><Journey compact steps={matchJourney(m)} /></div>
-    <div className="box-body">
-      <div className={`next-action ${stage}`}><div><strong>{next.title}</strong><p>{next.body}</p></div>{next.actions && <div className="inline-actions">{next.actions}</div>}</div>
-      <div className="party-grid">
-        <section className="party-card" aria-label="Recipient">
-          <h3 className="mini-title">Recipient</h3>
-          <strong className="party-name">{recipientName(m)}</strong>
-          <dl className="detail-grid"><div><dt>Organ</dt><dd>{m.organ}</dd></div><div><dt>Blood group</dt><dd>{m.recipient_blood_group}</dd></div><div><dt>Quantity</dt><dd>{m.quantity}</dd></div></dl>
-          <Link className="text-link" to={`/hospital?request=${m.request_id}`}>Open patient request <ArrowRight size={14} /></Link>
-        </section>
-        <section className="party-card" aria-label="Donor">
-          <h3 className="mini-title">Donor</h3>
-          <strong className="party-name">{donorName(m)}</strong>
-          <dl className="detail-grid"><div><dt>Donation</dt><dd>{m.donor_type === 'deceased' ? 'After death' : 'Living'}</dd></div><div><dt>Blood group</dt><dd>{m.donor_blood_group}</dd></div><div><dt>Pledge</dt><dd>#{m.pledge_id}</dd></div></dl>
-          {m.donor_email ? <PrivateHint>{m.donor_phone} · {m.donor_email}</PrivateHint> : <p className="quiet-note">Contact details appear after the donor accepts.</p>}
-          <FlagList flags={m.flags} />
-        </section>
-      </div>
-      <div className="match-detail-grid">
-        <section aria-label="Priority score">
-          <h3 className="mini-title">Why this recipient</h3>
-          <ScoreBreakdown score={m.score} breakdown={m.breakdown || []} note={`Rank #${m.recipient_rank} for this donor.`} />
-          {m.override_reason && <p className="rank-note warn">Override recorded: {m.override_reason}</p>}
-        </section>
-        <section aria-label="Decision history">
-          <h3 className="mini-title">Decision history</h3>
-          <ol className="match-events">{m.events.map((event, i) => <li key={i}><span className="dot" aria-hidden="true" /><div><strong>{MATCH_EVENTS[event.action] || event.action.replaceAll('_', ' ')}</strong><small>{formatDateTime(event.created_at)} · {event.actor}</small></div></li>)}</ol>
-        </section>
-      </div>
-    </div>
-  </section>;
+  return <MatchLayout
+    label={`Match #${m.id}`}
+    title={`${m.organ} for ${recipientName(m)}`}
+    subtitle={`Match #${m.id} · proposed ${formatDate(m.created_at)} · request #${m.request_id}`}
+    stage={stage} stageText={stageText} journey={matchJourney(m)} next={next}
+    cards={<>
+      <MatchCard title="Recipient" name={recipientName(m)} facts={[['Organ', m.organ], ['Blood group', m.recipient_blood_group], ['Quantity', m.quantity], ['Request', <Link className="text-link" to={`/hospital?request=${m.request_id}`}>#{m.request_id} <ArrowRight size={13} /></Link>]]}>
+        {m.override_reason && <p className="rank-note warn">Override: {m.override_reason}</p>}
+      </MatchCard>
+      <MatchCard title="Donor" name={donorName(m)} facts={[['Donation', m.donor_type === 'deceased' ? 'After death' : 'Living'], ['Blood group', m.donor_blood_group], ['Pledge', `#${m.pledge_id}`]]}>
+        {m.donor_email ? <PrivateHint>{m.donor_phone} · {m.donor_email}</PrivateHint> : <p className="quiet-note">Contact details appear after the donor accepts.</p>}
+        <FlagList flags={m.flags} />
+      </MatchCard>
+    </>}
+    score={{ score: m.score, rank: m.recipient_rank, breakdown: m.breakdown || [] }}
+    events={m.events.map((event) => ({ action: event.action, at: event.created_at, by: event.actor }))}
+  />;
 }
 
 const ORGAN_STATE = {
