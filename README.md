@@ -1,173 +1,139 @@
-# OrganoTale 🫀
+<div align="center">
 
-A priority-based organ donor and recipient matching platform. Donors pledge an organ once. Treating hospitals verify patients' requests and set their medical priority. OrganoTale then ranks compatible donors and recipients, and the hospital proposes a match that the donor accepts before it is confirmed. Every decision is recorded in an audit log.
+<img src="public/favicon.svg" width="80" alt="OrganoTale logo" />
 
-Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typing, and eligibility are decided by the transplant team.
+# OrganoTale
 
-## Roles
+**Priority-based organ donor and recipient matching for donors, patients, and hospitals.**
 
-| Role | Portal | What they do |
+[![Live demo](https://img.shields.io/badge/demo-organotale.vercel.app-000000?logo=vercel&logoColor=white)](https://organotale.vercel.app)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev)
+[![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)](https://expressjs.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)](https://neon.tech)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Tests](https://img.shields.io/badge/tests-38%20passing-2ea44f?logo=checkmarx&logoColor=white)](#-scripts)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f4be50)](LICENSE)
+
+[Live demo](https://organotale.vercel.app) · [Quick start](#-quick-start) · [How matching works](#-how-matching-works)
+
+</div>
+
+---
+
+## ✨ Features
+
+- 🫀 **Pledge once** – living or after-death pledges through a guided form with draft autosave
+- 🏥 **Hospital verification** – treating hospitals verify each request and set its medical priority
+- 🎯 **Priority matching** – strict compatibility rules plus a transparent 100-point score
+- 🤝 **Consent first** – donors accept before their contact details are shared; hospitals confirm after medical tests
+- 🕊️ **After-death donation** – hospitals record a death and choose which pledged organs to donate
+- 📄 **Match PDF** – a structured record of every confirmed match, with each party's privacy protected
+- 🔔 **Alerts and audit log** – in-app notifications, optional email, and every decision on the record
+
+## 👥 Roles
+
+| Role | Portal | Responsibilities |
 |---|---|---|
-| Member | `/dashboard` | Pledge organs (living or after death), request an organ for a patient, accept or decline proposed matches, keep donation records |
-| Hospital | `/hospital` (separate accounts and API) | Verify their patients' requests, set priority and clinical score, review ranked donors, propose and confirm matches, report deceased donors available |
-| Admin | `/admin` | Verify or suspend hospitals, view national recipient rankings for any pledge, oversee matches, read the audit log |
+| 🙋 Member | `/dashboard` | Pledge organs, request an organ for a patient, accept or decline proposed matches |
+| 🏥 Hospital | `/hospital` | Verify requests, set priority, review ranked donors, propose and confirm matches, report deaths |
+| 🛡️ Admin | `/admin` | Verify or suspend hospitals, oversee pledges and matches, review the audit log |
 
-## How matching works
+## 🎯 How matching works
 
-### Confirmed match PDF
+**Hard rules**: a pairing is suggested only when the organ matches, blood groups are compatible, living donors are 18+ and pledge an organ a living person can give, after-death organs have been reported available by a hospital (heart and lungs within the same state), and the donor is not already in an active match.
 
-Once a hospital confirms a match, an **Export PDF** button appears on that match for the donor and the recipient (Matches page), the treating hospital (Matches board), and administrators (Matches table). Proposed or declined matches have no PDF.
-
-The PDF records the match summary and dates, the recipient request, the donor pledge, the treating hospital, the priority score breakdown, the decision timeline, and a sign-off area. The donor's copy leaves out the recipient's identity and the recipient's copy leaves out the donor's identity, contact details, and screening flags.
-
-`GET /api/reports/matches/:id` returns this record to the people involved in a confirmed match, and 409 before confirmation.
-
-### Donor status in Settings
-
-Members can report **Alive** or **Deceased** under **Settings → Donor status**. Alive donors can create living-donation pledges for the supported organs or register future after-death pledges. Deceased donors can pledge any organ in the after-death registry; living donation is blocked in both the form and API.
-
-Reporting a death requires confirmation, withdraws active living pledges, closes pending living matches, and records the changes in the audit timeline. Existing confirmed matches remain historical records. After-death pledges are not created or activated automatically: a hospital must verify death and consent and report each organ available before it can be ranked. A hospital availability report also updates the donor status and closes any remaining living proposals. A mistaken self-report can be corrected to Alive until a hospital has recorded after-death availability; withdrawn pledges remain withdrawn until explicitly reactivated.
-
-`GET /api/auth/donor-settings` returns the member's donor status and whether a hospital has recorded availability. `PATCH /api/auth/donor-settings` accepts `{ "donor_status": "alive" | "deceased", "acknowledged": true }` for the signed-in member only.
-
-### Report a death (hospital portal)
-
-Staff of a verified hospital open **Report a death**, type the donor's email, and see every organ that donor pledged. They tick the organs to donate, confirm that death is certified and consent is documented, and submit. The donor is marked **Deceased**, pending living-donation matches close, and the selected organs, including ones pledged for living donation, become after-death donations available for priority matching from that hospital. Organs left unticked can be donated later from the same page.
-
-`GET /api/hospital/deceased?email=` returns the donor and their pledged organs. `POST /api/hospital/deceased` accepts `{ "email", "pledge_ids": [], "death_certified": true, "consent_documented": true }`.
-
-**Hard rules.** A donor and recipient are only paired when all of these pass:
-- Same organ, and the request is open and verified by a verified hospital
-- Blood group compatible (O → all, A → A/AB, B → B/AB, AB → AB; Rh ignored; eye and heart valves need no match)
-- Living donors are 18 or older and pledge an organ a living person can give (kidney, or part of a liver, lung, pancreas, or intestine)
-- Deceased-donor pledges count only after a hospital reports them available; heart and lungs must stay within the same state
-- The donor is not already in an active match, and the pairing was not declined before
-
-**Priority score (out of 100).**
+**Priority score** (out of 100):
 
 | Factor | Points |
 |---|---|
 | Verified priority: critical / urgent / stable | 40 / 25 / 10 |
-| Clinical score set by the hospital (0–40, e.g. MELD) | up to 15 |
+| Clinical score set by the hospital (0–40) | up to 15 |
 | Time on the verified list | 1 per 30 days, up to 15 |
 | Blood group: identical / compatible | 10 / 5 |
-| Distance from donor: same city / same state / other | 10 / 6 / 2 |
-| Child patient (under 18) | 5 |
-| Requester is a confirmed past donor | 5 |
+| Distance: same city / same state / other | 10 / 6 / 2 |
+| Child patient · requester is a past donor | 5 · 5 |
 
-Ties go to whoever was verified first. If a hospital proposes a donor for a patient who is not that donor's top-ranked recipient, it must record an override reason.
+**Lifecycle**: hospital proposes → donor accepts → hospital confirms after tests. Skipping a higher-ranked recipient requires a recorded override reason.
 
-**Match lifecycle.** Proposed by the hospital → donor accepts (their contact details are shared only now) → hospital confirms after medical tests, or declines with a reason. When confirmed matches reach the requested quantity, the request closes.
+> [!NOTE]
+> Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typing, and eligibility are decided by the transplant team.
 
-## API
-
-All routes are under `/api` and use JSON with a session cookie.
-
-| Area | Endpoints |
-|---|---|
-| Account | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
-| Public | `GET /health`, `GET /hospitals` (verified hospitals) |
-| Member | `GET /overview`, `GET\|POST /requests`, `GET\|PATCH\|DELETE /requests/:id`, `GET\|POST /pledges`, `PATCH /pledges/:id`, `GET /matches`, `PATCH /matches/:id/response`, `GET\|POST /records`, `DELETE /records/:id` |
-| Hospital | `POST /hospital/register`, `GET /hospital/me`, `GET /hospital/requests`, `GET /hospital/requests/:id`, `PATCH /hospital/requests/:id/verification`, `GET /hospital/requests/:id/candidates`, `GET\|POST /hospital/matches`, `PATCH /hospital/matches/:id`, `GET /hospital/donors?email=`, `POST /hospital/pledges/:id/availability` |
-| Admin | `GET /admin/dashboard`, `PATCH /admin/hospitals/:id`, `GET /admin/pledges/:id/recipients`, `DELETE /admin/users/:id` |
-
-Hospital accounts cannot use member endpoints, and members cannot use hospital endpoints. A hospital only sees requests where it is the treating hospital.
-
-## Tech stack
+## 🧰 Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, React Router 7, Vite 8 |
-| API | Express 5 as a Vercel Function, validated with Zod |
-| Database | Postgres: Vercel Postgres (Neon) in production, [PGlite](https://pglite.dev) locally and in tests; versioned migrations run automatically |
-| Auth | scrypt password hashing, HttpOnly SameSite=Strict session cookies, rate-limited sign-in |
-| Hosting | Vercel (static frontend on the CDN plus the `/api` function) |
+| Frontend | React 19 · React Router 7 · Vite 8 · Phosphor Icons · jsPDF |
+| API | Express 5 on Vercel Functions · Zod validation · Helmet |
+| Database | PostgreSQL (Neon) in production · PGlite locally and in tests |
+| Auth | scrypt password hashing · HttpOnly, SameSite=Strict session cookies |
+| Hosting | Vercel |
 
-## Run locally
+## 🚀 Quick start
 
-Requires Node.js 22.13 or later. No database server is needed; local data lives in `data/pglite`.
+Requires **Node.js 22.13+**. No database server is needed locally.
 
 ```bash
+git clone https://github.com/rohithprem18/OrganoTale.git
+cd OrganoTale
 npm install
 cp .env.example .env
-npm run seed      # fictional demo data (stop the dev server first)
-npm run dev       # web: http://127.0.0.1:5178  api: http://127.0.0.1:3008
+npm run seed    # fictional demo data
+npm run dev     # web http://127.0.0.1:5178 · api http://127.0.0.1:3008
 ```
 
-Demo accounts from `npm run seed`:
+**Demo accounts** (local seed only):
 
 | Role | Email | Password |
 |---|---|---|
-| Member (kidney donor) | `demo@organdonation.local` | `DemoDonor123!` |
-| Hospital, Mumbai | `hospital@organdonation.local` | `DemoHospital123!` |
-| Hospital, awaiting verification | `pending.hospital@example.test` | `DemoHospital123!` |
+| Member (donor) | `demo@organdonation.local` | `DemoDonor123!` |
+| Member (requester) | `meera@example.test` | `DemoMember123!` |
+| Hospital | `hospital@organdonation.local` | `DemoHospital123!` |
 | Admin | `admin@organdonation.local` | `DemoAdmin123!` |
 
-## App workspace and alerts
+## ⚙️ Configuration
 
-Signed-in members have separate **My pledges**, **My requests**, **Matches**, and **Records** views. Hospital staff use the request split view and matches board. Admin charts include pending hospitals by state. Public pages retain the marketing layout.
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Production | Postgres connection string (added by the Vercel Neon integration) |
+| `RESEND_API_KEY` · `ALERT_EMAIL_FROM` · `APP_URL` | Optional | Email alerts through Resend |
+| `CRON_SECRET` | Optional | Protects the email queue job at `GET /api/jobs/email` |
+| `APP_ORIGIN` | Optional | Extra allowed browser origins |
 
-**Settings** saves opt-in email alerts.
+See [`.env.example`](.env.example) for details.
 
-PIN lookup uses the [PostalPinCode directory](https://www.postalpincode.in/Api-Details) through the API, with a timeout, limited cache, and manual entry fallback. It suggests the postal district as the city; users should check and correct that suggestion. PIN codes spanning multiple districts offer a choice. No clinical information is sent to the lookup service.
-
-### Enable email alerts
-
-1. Set `RESEND_API_KEY`, `ALERT_EMAIL_FROM` (on a verified sending domain), and `APP_URL` (the HTTPS site URL). See `.env.example` and [Resend's email API](https://resend.com/docs/api-reference/emails/send-email).
-2. Members enable **Settings → Email alerts**. Alerts are queued when a donor is proposed or a match is confirmed; emails contain a sign-in link without names or clinical information. Existing events are not backfilled.
-3. `npm start` and the local dev server process the queue every minute. Vercel processes a small batch after successful writes. For dependable retries when the site is idle, configure a scheduler to call `GET /api/jobs/email` every minute with `Authorization: Bearer <CRON_SECRET>`. Configure `CRON_SECRET` on the server too; the job endpoint rejects unauthenticated calls.
-
-The outbox is committed with match notifications, uses a claim lease for concurrent workers, and retries failed sends up to five times with the [same Resend idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys). Uncertain deliveries stop retrying after 23 hours. `email_outbox.status`, `attempts`, and `last_error` expose delivery failures for operations; `sent` means provider acceptance, not proof of inbox delivery. Turning alerts off cancels queued jobs, though an email already in flight may still arrive. Automated tests use a fake provider and never send emails.
-
-Email is the implemented external channel; SMS and WhatsApp are not configured.
-
-## Scripts
+## 📜 Scripts
 
 | Command | Purpose |
 |---|---|
-| `npm run dev` | API and Vite dev server with hot reload |
-| `npm test` | Matching-engine unit tests and API integration tests (in-memory Postgres) |
-| `npm run check` | TypeScript check |
-| `npm run build` | Production build into `dist/` |
-| `npm start` | Serve the API and built frontend from one Node process |
-| `npm run make-admin -- <email>` | Promote an account to administrator (add `--production` for the live database) |
-| `npm run deploy` | Production deploy with the Vercel CLI |
+| `npm run dev` | API and web app with hot reload |
+| `npm test` | Matching, API, component, and PDF tests |
+| `npm run check` | Type check |
+| `npm run build` | Production build |
+| `npm run make-admin -- <email>` | Promote an account to administrator (`--production` for the live database) |
 
-## Deploy to Vercel
+## ☁️ Deploy
 
-The project deploys automatically when you push to `main`. For a new setup: link the repository in Vercel, then under **Storage** create a **Postgres (Neon)** database and connect it, which adds `DATABASE_URL`. Migrations run on the first request.
-
-The demo seed is disabled in production, so a new deployment starts empty. Nobody can create requests until a hospital is verified, and only an administrator can verify hospitals. To create the first administrator, register a member account on the site, then run:
+Pushing to `main` deploys to Vercel. For a new setup, connect a **Postgres (Neon)** database in Vercel Storage; migrations run automatically. Production starts empty, so create the first administrator:
 
 ```bash
 npx vercel env pull .env.local
 npm run make-admin -- you@example.com --production
 ```
 
-Then the administrator verifies each hospital from **Admin → Hospitals**.
+## 📁 Project structure
 
-Note: the Neon integration gives the Vercel development environment the same `DATABASE_URL` as production. `vercel env pull` therefore points local tools at production data; the seed script refuses to run against it.
-
-## Project structure
-
-```
-api/index.js              Vercel Function entry point
-server/app.js             Middleware and route mounting
-server/routes/account.js  Sign-up, sign-in, session
-server/routes/member.js   Requests, pledges, member match responses, records
-server/routes/hospital.js Hospital portal API
-server/routes/admin.js    Hospital verification, oversight, audit log
-server/matching.js        Matching rules and priority scoring (pure functions)
-server/db.js              Migrations and connection (pg or PGlite)
-server/validation.js      Zod request schemas
-shared/options.js         Organs, blood groups, priorities, states
-src/pages/                React pages (Workspace, Hospital, Admin, Auth, Public)
+```text
+api/            Vercel Function entry
+server/         Express app, routes, matching engine, migrations
+shared/         Organs, blood groups, priorities, states
+src/            React app: pages, components, PDF export
 ```
 
-## Legal
+## ⚖️ Legal
 
-Buying or selling organs is illegal under India's Transplantation of Human Organs and Tissues Act, 1994. Living donation between people who are not near relatives requires approval from an authorization committee. OrganoTale never arranges payment and does not replace these processes.
+Buying or selling organs is illegal under India's Transplantation of Human Organs and Tissues Act, 1994. OrganoTale never arranges payment and does not replace statutory approval or allocation processes.
 
-## License
+## 📄 License
 
-See [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 Rohith Prem. Builds on the original Organ Donation Management System by Abdullah Al Shafi.
