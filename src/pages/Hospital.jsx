@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ClipboardText, Handshake, Heartbeat, Hourglass, IdentificationCard, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react';
 import { api } from '../api';
-import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
+import { useResource, useAsync, Field, Notice, Loading, Status, NextStep, Journey, requestJourney, matchJourney, SearchBox, ScoreBreakdown, FlagList, ConfirmButton, ReasonDialogButton, PrivateHint, AppHeader, StatStrip, Box, Tabs, InlineEmpty, formValues, formatDate, formatDateTime, ageFrom } from '../components';
 import { PRIORITIES } from '../../shared/options';
 import { MatchPdfButton } from '../ExportPdf';
 
@@ -32,21 +32,21 @@ function HospitalWorkspace({ hospital }) {
   const readyToConfirm = matchRows.filter((m) => m.status === 'proposed' && m.donor_response === 'accepted');
   const selectedId = Number(params.get('request')) || (pending[0] || rows.find((r) => r.status === 'open') || rows[0])?.id || null;
   const select = (id) => setParams({ request: String(id) });
-  const open = (tab) => setParams(tab === 'queue' ? {} : { tab });
+  const open = (tab, filter) => setParams(tab === 'queue' ? {} : { tab, ...(filter ? { filter } : {}) });
   const refreshAll = () => { requests.refresh(); matches.refresh(); };
   return <div className="screen">
     <AppHeader title={VIEWS[view]} subtitle={`${hospital.name} · ${hospital.city}, ${hospital.state}`} />
     <Notice>{requests.error || matches.error}</Notice>
-    {view !== 'registry' && <StatStrip items={[
+    {view === 'queue' && <StatStrip items={[
       { label: 'Need verification', value: pending.length, icon: ClipboardText, onClick: pending.length ? () => select(pending[0].id) : undefined },
       { label: 'Verified open requests', value: rows.filter((r) => r.status === 'open' && r.verification === 'verified').length, icon: ShieldCheck },
-      { label: 'Donor accepted, to confirm', value: readyToConfirm.length, icon: Handshake, onClick: () => open('matches') },
-      { label: 'Confirmed matches', value: matchRows.filter((m) => m.status === 'confirmed').length, icon: Heartbeat, onClick: () => open('matches') },
+      { label: 'Donor accepted, to confirm', value: readyToConfirm.length, icon: Handshake, onClick: () => open('matches', 'confirm') },
+      { label: 'Confirmed matches', value: matchRows.filter((m) => m.status === 'confirmed').length, icon: Heartbeat, onClick: () => open('matches', 'confirmed') },
     ]} />}
     {view === 'queue' && (!requests.data ? <Loading variant="cards" /> : !rows.length
       ? <Box><InlineEmpty icon={ClipboardText}>No patient requests yet. They appear when members choose {hospital.name} as the treating hospital.</InlineEmpty></Box>
       : <div className="screen-grid queue-layout grow"><RequestQueue rows={rows} selectedId={selectedId} onSelect={select} />{selectedId ? <RequestPane key={selectedId} id={selectedId} matches={matchRows} onChanged={refreshAll} /> : <Box><InlineEmpty>Select a request from the queue.</InlineEmpty></Box>}</div>)}
-    {view === 'matches' && <MatchesBoard resource={matches} onChanged={refreshAll} />}
+    {view === 'matches' && <MatchesView resource={matches} onChanged={refreshAll} />}
     {view === 'registry' && <ReportDeath hospital={hospital} />}
   </div>;
 }
@@ -140,38 +140,97 @@ function Candidate({ candidate: c, position, request, onProposed }) {
   </div><ScoreBreakdown score={c.score} breakdown={c.breakdown} /></article>;
 }
 
-const BOARD = [
-  ['proposed', 'Proposed', (m) => m.status === 'proposed' && m.donor_response === 'pending'],
-  ['accepted', 'Donor accepted', (m) => m.status === 'proposed' && m.donor_response === 'accepted'],
+const MATCH_FILTERS = [
+  ['confirm', 'To confirm', (m) => m.status === 'proposed' && m.donor_response === 'accepted'],
+  ['waiting', 'Waiting for donor', (m) => m.status === 'proposed' && m.donor_response !== 'accepted'],
   ['confirmed', 'Confirmed', (m) => m.status === 'confirmed'],
   ['declined', 'Declined', (m) => m.status === 'declined'],
+  ['all', 'All', () => true],
 ];
-function MatchesBoard({ resource, onChanged }) {
+const MATCH_EVENTS = { proposed: 'Match proposed', donor_accepted: 'Donor accepted', donor_declined: 'Donor declined', confirmed: 'Confirmed after medical tests', declined: 'Match declined' };
+const matchStage = (m) => m.status === 'confirmed' ? ['confirmed', 'Confirmed'] : m.status === 'declined' ? ['declined', 'Declined'] : m.donor_response === 'accepted' ? ['accepted', 'Ready to confirm'] : ['pending', 'Waiting for donor'];
+const donorName = (m) => m.donor_first_name ? `${m.donor_first_name} ${m.donor_last_name}` : m.donor_label;
+const recipientName = (m) => `${m.requester_first_name} ${m.requester_last_name}`;
+
+function MatchesView({ resource, onChanged }) {
   if (!resource.data) return <Loading variant="cards" />;
-  if (!resource.data.length) return <Box><InlineEmpty icon={Handshake}>No matches yet. Propose one from a verified request’s ranked donors.</InlineEmpty></Box>;
-  return <div className={`board grow ${resource.refreshing ? 'refreshing' : ''}`}>{BOARD.map(([key, label, test]) => {
-    const items = resource.data.filter(test);
-    return <section key={key} className="board-column" aria-label={label}><h3>{label} <span>{items.length}</span></h3>{items.length ? items.map((m) => <MatchCard key={m.id} match={m} resource={resource} onChanged={onChanged} />) : <p className="board-empty">Nothing here</p>}</section>;
-  })}</div>;
+  if (!resource.data.length) return <Box><InlineEmpty icon={Handshake}>No matches yet. Propose one from a verified request’s ranked donors in the Patient queue.</InlineEmpty></Box>;
+  return <MatchesWorkspace resource={resource} onChanged={onChanged} />;
 }
-function MatchCard({ match, resource, onChanged }) {
-  const donor = match.donor_first_name ? `${match.donor_first_name} ${match.donor_last_name}` : match.donor_label;
-  const decide = async (body) => { await resource.mutate((rows) => rows.map((m) => m.id === match.id ? { ...m, status: body.status, decision_reason: body.reason } : m), () => api(`/hospital/matches/${match.id}`, { method: 'PATCH', body })); onChanged(); };
-  return <article className="board-card">
-    <h4>{match.organ} · {match.requester_first_name} {match.requester_last_name}</h4>
-    <p>Donor: <strong>{donor}</strong> ({match.donor_type === 'living' ? 'living' : 'after death'}, {match.donor_blood_group})</p>
-    {match.donor_email && <PrivateHint>{match.donor_phone} · {match.donor_email}</PrivateHint>}
-    <p className="muted">Score {match.score} · rank #{match.recipient_rank}{match.override_reason ? ' · override recorded' : ''}</p>
-    {match.decision_reason && <p className="muted">Note: {match.decision_reason}</p>}
-    {match.status === 'confirmed' && <div className="inline-actions"><MatchPdfButton id={match.id} compact /></div>}
-    {match.status === 'proposed' && <div className="inline-actions">
-      {match.donor_response === 'accepted'
-        ? <ConfirmButton danger={false} className="button small" title={`Confirm match #${match.id}?`} description="Confirm only after crossmatching and medical tests are complete. The donor and requester will be notified." confirmLabel="Confirm match" success="Match confirmed." onConfirm={() => decide({ status: 'confirmed', reason: '' })}>Confirm after tests</ConfirmButton>
-        : <span className="muted">Waiting for the donor</span>}
-      <ReasonDialogButton title="Decline this match?" description="The donor and requester will be notified, and this pairing won’t be offered again." minLength={5} confirmLabel="Decline match" busyLabel="Declining…" success="Match declined." onSubmit={(reason) => decide({ status: 'declined', reason })}>Decline</ReasonDialogButton>
-    </div>}
-    <details><summary>Decision history</summary><ul className="event-list">{match.events.map((event, i) => <li key={i}>{formatDateTime(event.created_at)} · {event.action.replaceAll('_', ' ')} · {event.actor}</li>)}</ul></details>
-  </article>;
+function MatchesWorkspace({ resource, onChanged }) {
+  const [params, setParams] = useSearchParams();
+  const rows = resource.data;
+  // Open on the filter that needs attention first.
+  const [filter, setFilter] = useState(() => MATCH_FILTERS.some(([key]) => key === params.get('filter')) ? params.get('filter') : MATCH_FILTERS.find(([key, , test]) => key !== 'all' && rows.some(test))?.[0] || 'all');
+  const [search, setSearch] = useState('');
+  const [, filterLabel, test] = MATCH_FILTERS.find(([key]) => key === filter);
+  const query = search.trim().toLowerCase();
+  const visible = rows.filter(test).filter((m) => !query || `#${m.id} ${m.organ} ${recipientName(m)} ${donorName(m)}`.toLowerCase().includes(query));
+  const selectedId = Number(params.get('match')) || visible[0]?.id || null;
+  const selected = rows.find((m) => m.id === selectedId);
+  const changeFilter = (key) => { setFilter(key); setParams({ tab: 'matches', filter: key }); };
+  return <>
+    <div className="match-toolbar">
+      <Tabs label="Filter matches" value={filter} onChange={changeFilter} tabs={MATCH_FILTERS.map(([key, text, t]) => [key, text, rows.filter(t).length])} />
+      <SearchBox value={search} onChange={setSearch} placeholder="Search match, organ, recipient, or donor" />
+    </div>
+    <div className={`screen-grid detail grow ${resource.refreshing ? 'refreshing' : ''}`}>
+      <Box scroll className="match-list-box" title={filterLabel} subtitle={`${visible.length} ${visible.length === 1 ? 'match' : 'matches'}`} bodyClass="flush">
+        {visible.length ? <ul className="rows">{visible.map((m) => {
+          const [stage, stageText] = matchStage(m);
+          return <li key={m.id}><button type="button" className={`row-item ${m.id === selectedId ? 'selected' : ''}`} aria-current={m.id === selectedId ? 'true' : undefined} onClick={() => setParams({ tab: 'matches', filter, match: String(m.id) })}>
+            <span className="row-main"><strong>{m.organ} for {recipientName(m)}</strong><small>#{m.id} · {donorName(m)} · score {m.score}</small><small>Updated {formatDate(m.updated_at || m.created_at)}</small></span>
+            <Status value={stage} label={stageText} />
+          </button></li>;
+        })}</ul> : <InlineEmpty>{query ? 'No matches for this search.' : `No matches in ${filterLabel.toLowerCase()}.`}</InlineEmpty>}
+      </Box>
+      {selected ? <MatchPane key={selected.id} match={selected} resource={resource} onChanged={onChanged} /> : <Box><InlineEmpty icon={Handshake}>Select a match to review it.</InlineEmpty></Box>}
+    </div>
+  </>;
+}
+function MatchPane({ match: m, resource, onChanged }) {
+  const [stage, stageText] = matchStage(m);
+  const decide = async (body) => { await resource.mutate((rows) => rows.map((row) => row.id === m.id ? { ...row, status: body.status, decision_reason: body.reason, updated_at: new Date().toISOString() } : row), () => api(`/hospital/matches/${m.id}`, { method: 'PATCH', body })); onChanged(); };
+  const decline = <ReasonDialogButton className="button secondary" title="Decline this match?" description="The donor and requester will be notified, and this pairing won’t be offered again." minLength={5} confirmLabel="Decline match" busyLabel="Declining…" success="Match declined." onSubmit={(reason) => decide({ status: 'declined', reason })}>Decline</ReasonDialogButton>;
+  const next = {
+    accepted: { title: 'The donor accepted. Confirm once medical tests are complete.', body: 'Confirm only after crossmatching and tissue typing. The donor and the recipient are notified.', actions: <><ConfirmButton danger={false} className="button" title={`Confirm match #${m.id}?`} description="Confirm only after crossmatching and medical tests are complete. The donor and requester will be notified." confirmLabel="Confirm match" success="Match confirmed." onConfirm={() => decide({ status: 'confirmed', reason: '' })}>Confirm after tests</ConfirmButton>{decline}</> },
+    pending: { title: `Waiting for ${m.donor_label} to respond.`, body: 'The donor’s name and contact details appear once they accept.', actions: decline },
+    confirmed: { title: `Confirmed on ${formatDate(m.updated_at || m.created_at)}.`, body: 'Download the match record for the transplant file.', actions: <MatchPdfButton id={m.id} /> },
+    declined: { title: 'This match was declined.', body: m.decision_reason ? `Reason: ${m.decision_reason}` : 'No reason was recorded.', actions: null },
+  }[stage];
+  return <section className="box scroll match-pane" aria-label={`Match #${m.id}`}>
+    <div className="box-head"><div className="box-title"><h2>{m.organ} for {recipientName(m)}</h2><small>Match #{m.id} · proposed {formatDate(m.created_at)} · request #{m.request_id}</small></div><Status value={stage} label={stageText} /></div>
+    <div className="box-sub"><Journey compact steps={matchJourney(m)} /></div>
+    <div className="box-body">
+      <div className={`next-action ${stage}`}><div><strong>{next.title}</strong><p>{next.body}</p></div>{next.actions && <div className="inline-actions">{next.actions}</div>}</div>
+      <div className="party-grid">
+        <section className="party-card" aria-label="Recipient">
+          <h3 className="mini-title">Recipient</h3>
+          <strong className="party-name">{recipientName(m)}</strong>
+          <dl className="detail-grid"><div><dt>Organ</dt><dd>{m.organ}</dd></div><div><dt>Blood group</dt><dd>{m.recipient_blood_group}</dd></div><div><dt>Quantity</dt><dd>{m.quantity}</dd></div></dl>
+          <Link className="text-link" to={`/hospital?request=${m.request_id}`}>Open patient request <ArrowRight size={14} /></Link>
+        </section>
+        <section className="party-card" aria-label="Donor">
+          <h3 className="mini-title">Donor</h3>
+          <strong className="party-name">{donorName(m)}</strong>
+          <dl className="detail-grid"><div><dt>Donation</dt><dd>{m.donor_type === 'deceased' ? 'After death' : 'Living'}</dd></div><div><dt>Blood group</dt><dd>{m.donor_blood_group}</dd></div><div><dt>Pledge</dt><dd>#{m.pledge_id}</dd></div></dl>
+          {m.donor_email ? <PrivateHint>{m.donor_phone} · {m.donor_email}</PrivateHint> : <p className="quiet-note">Contact details appear after the donor accepts.</p>}
+          <FlagList flags={m.flags} />
+        </section>
+      </div>
+      <div className="match-detail-grid">
+        <section aria-label="Priority score">
+          <h3 className="mini-title">Why this recipient</h3>
+          <ScoreBreakdown score={m.score} breakdown={m.breakdown || []} note={`Rank #${m.recipient_rank} for this donor.`} />
+          {m.override_reason && <p className="rank-note warn">Override recorded: {m.override_reason}</p>}
+        </section>
+        <section aria-label="Decision history">
+          <h3 className="mini-title">Decision history</h3>
+          <ol className="match-events">{m.events.map((event, i) => <li key={i}><span className="dot" aria-hidden="true" /><div><strong>{MATCH_EVENTS[event.action] || event.action.replaceAll('_', ' ')}</strong><small>{formatDateTime(event.created_at)} · {event.actor}</small></div></li>)}</ol>
+        </section>
+      </div>
+    </div>
+  </section>;
 }
 
 const ORGAN_STATE = {
