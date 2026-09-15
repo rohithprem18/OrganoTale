@@ -80,3 +80,30 @@ test('optimistic mutations update immediately and restore data when the server r
   await React.act(async () => { reject(new Error('Denied')); await result; });
   assert.equal(host.textContent, 'active');
 });
+
+
+test('deceased donor form overrides a saved living draft and exposes every after-death organ', async () => {
+  const { PledgeWizard } = await server.ssrLoadModule('/src/pages/Workspace.jsx');
+  const { MemoryRouter } = await import('react-router-dom');
+  const { ORGANS } = await import('../shared/options.js');
+  await mount(h(MemoryRouter, null, h(PledgeWizard, {
+    saved: { donor_type: 'living', organ: 'Kidney' }, initialOrgan: '',
+    user: { donor_status: 'deceased', address: 'Mumbai' }, onDone: () => {}, onDiscard: () => {},
+  })));
+  assert.equal(host.querySelector('[name=donor_type]').value, 'deceased');
+  assert.equal(host.querySelector('[name=donor_type] option[value=living]'), null);
+  assert.deepEqual([...host.querySelector('[name=organ]').options].map((o) => o.value).filter(Boolean), ORGANS);
+  assert.ok(host.textContent.includes('hospital must verify each organ'));
+});
+
+test('alive donor form lists living organs and allows a future after-death pledge', async () => {
+  const { PledgeWizard } = await server.ssrLoadModule('/src/pages/Workspace.jsx');
+  const { MemoryRouter } = await import('react-router-dom');
+  const { LIVING_ORGANS } = await import('../shared/options.js');
+  await mount(h(MemoryRouter, null, h(PledgeWizard, {
+    saved: {}, initialOrgan: '', user: { donor_status: 'alive', address: 'Mumbai' }, onDone: () => {}, onDiscard: () => {},
+  })));
+  assert.equal(host.querySelector('[name=donor_type]').value, 'living');
+  assert.deepEqual([...host.querySelector('[name=organ]').options].map((o) => o.value).filter(Boolean), LIVING_ORGANS);
+  assert.ok(host.querySelector('[name=donor_type] option[value=deceased]'));
+});

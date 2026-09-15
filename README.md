@@ -14,6 +14,14 @@ Rankings are suggestions for qualified hospital staff. Crossmatching, tissue typ
 
 ## How matching works
 
+### Donor status in Settings
+
+Members can report **Alive** or **Deceased** under **Settings → Donor status**. Alive donors can create living-donation pledges for the supported organs or register future after-death pledges. Deceased donors can pledge any organ in the after-death registry; living donation is blocked in both the form and API.
+
+Reporting a death requires confirmation, withdraws active living pledges, closes pending living matches, and records the changes in the audit timeline. Existing confirmed matches remain historical records. After-death pledges are not created or activated automatically: a hospital must verify death and consent and report each organ available before it can be ranked. A hospital availability report also updates the donor status and closes any remaining living proposals. A mistaken self-report can be corrected to Alive until a hospital has recorded after-death availability; withdrawn pledges remain withdrawn until explicitly reactivated.
+
+`GET /api/auth/donor-settings` returns the member's donor status and whether a hospital has recorded availability. `PATCH /api/auth/donor-settings` accepts `{ "donor_status": "alive" | "deceased", "acknowledged": true }` for the signed-in member only.
+
 **Hard rules.** A donor and recipient are only paired when all of these pass:
 - Same organ, and the request is open and verified by a verified hospital
 - Blood group compatible (O → all, A → A/AB, B → B/AB, AB → AB; Rh ignored; eye and heart valves need no match)

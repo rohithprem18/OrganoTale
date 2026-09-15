@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { notify } from './util.js';
 import { deliverEmailQueue, validCronToken } from './email.js';
+import { ORGANS } from '../shared/options.js';
 
 const registration = (email = 'member@example.test', extra = {}) => ({ first_name: 'Test', last_name: 'Member', dob: '1995-02-10', blood_group: 'O+', gender: 'Other', email, password: 'MemberPass123!', confirm_password: 'MemberPass123!', phone: '0000000000', address: 'Test City', zip: '000000', consent: true, ...extra });
 const hospitalRegistration = (email = 'staff@hospital.test', extra = {}) => ({ hospital_name: 'Test Hospital', registration_number: `REG-${email}`, city: 'Mumbai', state: 'Maharashtra', pincode: '400001', hospital_phone: '0000000000', first_name: 'Staff', last_name: 'Member', phone: '0000000000', email, password: 'HospitalPass123!', confirm_password: 'HospitalPass123!', consent: true, ...extra });
@@ -326,7 +327,7 @@ test('database data survives closing and reopening the local store', async () =>
     await db.prepare('INSERT INTO users(first_name,last_name,dob,blood_group,gender,email,password_hash,phone,address,zip) VALUES(?,?,?,?,?,?,?,?,?,?)').run('Test','Persistence','1990-01-01','O+','Other','test@example.test','unused','0000000000','Test City','000000');
     await db.close(); db = await openDatabase(store);
     assert.equal((await db.prepare('SELECT first_name FROM users').get()).first_name, 'Test');
-    assert.deepEqual((await db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).map((row) => row.version), [1, 2, 3, 4]);
+    assert.deepEqual((await db.prepare('SELECT version FROM schema_migrations ORDER BY version').all()).map((row) => row.version), [1, 2, 3, 4, 5]);
     await db.close();
   } finally {
     // Windows can hold file handles briefly after close; retry cleanup instead of flaking.
@@ -389,4 +390,52 @@ test('email preferences are private; alert jobs are transactional, retryable, an
   await owner.client.patch('/api/notifications/preferences').send({ email_alerts: false }).expect(200);
   assert.equal((await deliverEmailQueue(db, { env, fetcher: success })).sent, 0);
   assert.equal((await db.prepare("SELECT COUNT(*)::int AS n FROM email_outbox WHERE status='cancelled'").get()).n, 1);
+});
+
+
+test('donor status controls living donation and requires hospital verification for every after-death organ', async (t) => {
+  const { app, db } = await fixture(t);
+  const h = await hospital(app, db);
+  const donor = await member(app, 'status-donor@example.test');
+  const recipient = await member(app, 'status-recipient@example.test');
+  await request(app).get('/api/auth/donor-settings').expect(401);
+  await h.client.patch('/api/auth/donor-settings').send({ donor_status: 'deceased', acknowledged: true }).expect(403);
+  assert.equal((await donor.client.get('/api/auth/donor-settings')).body.donor_status, 'alive');
+  await donor.client.patch('/api/auth/donor-settings').send({ donor_status: 'deceased' }).expect(400);
+  await donor.client.patch('/api/auth/donor-settings').send({ donor_status: 'deceased', acknowledged: true, user_id: recipient.user.id }).expect(400);
+  await donor.client.post('/api/pledges').send(pledge({ organ: 'Heart' })).expect(400);
+  const livingId = (await donor.client.post('/api/pledges').send(pledge()).expect(201)).body.id;
+  const requestId = (await recipient.client.post('/api/requests').send(organRequest(h.id)).expect(201)).body.id;
+  await verify(h, requestId);
+  const matchId = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: livingId }).expect(201)).body.id;
+  const changed = await donor.client.patch('/api/auth/donor-settings').send({ donor_status: 'deceased', acknowledged: true }).expect(200);
+  assert.equal(changed.body.user.donor_status, 'deceased');
+  assert.equal(changed.body.user.password_hash, undefined);
+  assert.equal((await donor.client.get('/api/auth/me')).body.user.donor_status, 'deceased');
+  assert.equal((await db.prepare('SELECT status FROM pledges WHERE id=?').get(livingId)).status, 'withdrawn');
+  assert.equal((await db.prepare('SELECT status FROM matches WHERE id=?').get(matchId)).status, 'declined');
+  assert.equal((await db.prepare('SELECT status FROM requests WHERE id=?').get(requestId)).status, 'open');
+  await donor.client.patch(`/api/matches/${matchId}/response`).send({ response: 'accepted' }).expect(409);
+  await h.client.patch(`/api/hospital/matches/${matchId}`).send({ status: 'confirmed' }).expect(409);
+  await donor.client.post('/api/pledges').send(pledge()).expect(409);
+  await donor.client.patch(`/api/pledges/${livingId}`).send({ status: 'active' }).expect(409);
+  const deceasedIds = [];
+  for (const organ of ORGANS) deceasedIds.push((await donor.client.post('/api/pledges').send(pledge({ organ, donor_type: 'deceased' })).expect(201)).body.id);
+  assert.equal((await h.client.get(`/api/hospital/requests/${requestId}/candidates`)).body.candidates.length, 0);
+  assert.equal((await donor.client.get('/api/auth/donor-settings')).body.hospital_verified, false);
+  // A mistaken self-report is reversible, but it does not reactivate old pledges.
+  await donor.client.patch('/api/auth/donor-settings').send({ donor_status: 'alive', acknowledged: true }).expect(200);
+  assert.equal((await db.prepare('SELECT status FROM pledges WHERE id=?').get(livingId)).status, 'withdrawn');
+  const kidneyId = deceasedIds[ORGANS.indexOf('Kidney')];
+  await h.client.post(`/api/hospital/pledges/${kidneyId}/availability`).send({}).expect(200);
+  const settings = (await donor.client.get('/api/auth/donor-settings')).body;
+  assert.equal(settings.donor_status, 'deceased'); assert.equal(settings.hospital_verified, true);
+  await donor.client.patch('/api/auth/donor-settings').send({ donor_status: 'alive', acknowledged: true }).expect(409);
+  assert.equal((await h.client.get(`/api/hospital/requests/${requestId}/candidates`)).body.candidates[0].pledge_id, kidneyId);
+  const deceasedMatch = (await h.client.post('/api/hospital/matches').send({ request_id: requestId, pledge_id: kidneyId }).expect(201)).body;
+  assert.equal(deceasedMatch.donor_response, 'accepted');
+  await h.client.patch(`/api/hospital/matches/${deceasedMatch.id}`).send({ status: 'confirmed' }).expect(200);
+  const history = await db.prepare("SELECT detail FROM audit_events WHERE entity='user' AND entity_id=? AND action='donor_status_changed'").all(donor.user.id);
+  assert.equal(history.length, 3);
+  assert.equal((await recipient.client.get('/api/auth/me')).body.user.donor_status, 'alive');
 });

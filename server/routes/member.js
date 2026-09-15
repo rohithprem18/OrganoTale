@@ -108,8 +108,13 @@ export function memberRoutes(db) {
     const d = pledgeSchema.parse(req.body);
     const bmi = Number((d.weight / ((d.height / 100) ** 2)).toFixed(2));
     try {
-      const created = await db.prepare(`INSERT INTO pledges(user_id,organ,donor_type,city,state,height,weight,bmi,last_donation,operation_type,operation_desc,disease_type,disease_desc,accident_type,accident_desc,pregnant,menstruation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).get(req.user.id, d.organ, d.donor_type, d.city, d.state, d.height, d.weight, bmi, d.last_donation || null, ...HEALTH_FIELDS.slice(2).map((key) => d[key]));
-      await audit(db, req.user.id, 'pledge', created.id, 'created', { organ: d.organ, donor_type: d.donor_type });
+      const created = await db.transaction(async (tx) => {
+        const donor = await tx.prepare('SELECT donor_status FROM users WHERE id=? FOR UPDATE').get(req.user.id);
+        if (donor.donor_status === 'deceased' && d.donor_type === 'living') throw new HttpError(409, 'This donor is deceased. Choose donation after death.');
+        const pledge = await tx.prepare(`INSERT INTO pledges(user_id,organ,donor_type,city,state,height,weight,bmi,last_donation,operation_type,operation_desc,disease_type,disease_desc,accident_type,accident_desc,pregnant,menstruation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).get(req.user.id, d.organ, d.donor_type, d.city, d.state, d.height, d.weight, bmi, d.last_donation || null, ...HEALTH_FIELDS.slice(2).map((key) => d[key]));
+        await audit(tx, req.user.id, 'pledge', pledge.id, 'created', { organ: d.organ, donor_type: d.donor_type });
+        return pledge;
+      });
       res.status(201).json({ id: created.id });
     } catch (error) {
       if (error.code === '23505') throw new HttpError(409, `You already have an active ${d.donor_type} pledge for ${d.organ}.`);
@@ -126,6 +131,8 @@ export function memberRoutes(db) {
     if (row.status === status) return res.json({ success: true });
     try {
       await db.transaction(async (tx) => {
+        const donor = await tx.prepare('SELECT donor_status FROM users WHERE id=? FOR UPDATE').get(req.user.id);
+        if (status === 'active' && row.donor_type === 'living' && donor.donor_status === 'deceased') throw new HttpError(409, 'A deceased donor cannot reactivate a living-donation pledge.');
         if (status === 'withdrawn') {
           const hospitals = await tx.prepare("SELECT DISTINCT hospital_id FROM matches WHERE pledge_id=? AND status='proposed'").all(row.id);
           await tx.prepare("UPDATE matches SET status='declined', donor_response='declined', decision_reason='Donor withdrew the pledge', updated_at=now() WHERE pledge_id=? AND status='proposed'").run(row.id);

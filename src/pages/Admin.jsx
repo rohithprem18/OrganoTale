@@ -147,6 +147,7 @@ function describeEvent(e) {
     donor_lookup: `${who} searched the donor registry for ${d.email} (${d.results} found)`,
     deleted: `${who} deleted the ${d.role} account ${d.email}`,
     promoted_admin: `Account ${id} was made an administrator`,
+    donor_status_changed: `${who} changed donor ${id} from ${d.from} to ${d.to}`,
   }[e.action] || `${who} ${e.action.replaceAll('_', ' ')} ${e.entity} ${id}`;
   return { text, tone: DANGER.includes(e.action) ? 'danger' : WARN.includes(e.action) || d.override_reason ? 'warn' : '' };
 }

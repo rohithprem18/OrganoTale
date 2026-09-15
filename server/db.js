@@ -171,6 +171,13 @@ const MIGRATIONS = [
       CREATE INDEX email_outbox_pending ON email_outbox(status, next_attempt_at);
     `,
   },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE users ADD COLUMN donor_status TEXT NOT NULL DEFAULT 'alive' CHECK (donor_status IN ('alive','deceased'));
+      UPDATE users SET donor_status='deceased' WHERE id IN (SELECT user_id FROM pledges WHERE available_at IS NOT NULL);
+    `,
+  },
 ];
 
 // Runs inside one transaction, so a failed migration leaves the schema untouched.

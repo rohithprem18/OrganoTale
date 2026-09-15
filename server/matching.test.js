@@ -38,6 +38,7 @@ test('hard rules exclude pairings that must never match', () => {
     assert.equal(result.eligible, false);
     assert.ok(result.exclusions.some((reason) => reason.includes(text)), `expected "${text}" in ${result.exclusions}`);
   };
+  excluded(donor({ donor_status: 'deceased' }), recipient(), 'cannot make a living donation');
   excluded(donor({ organ: 'Heart' }), recipient({ organ: 'Heart' }), 'living donor');
   excluded(donor({ donor_dob: '2010-01-01' }), recipient(), '18 or older');
   excluded(donor(), recipient({ verification: 'pending' }), 'not verified');

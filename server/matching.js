@@ -76,6 +76,7 @@ export function evaluate(pledge, request, ctx) {
   const blood = bloodMatch(pledge.donor_blood_group, request.blood_group, request.organ);
   if (!blood) exclusions.push(`Blood group ${pledge.donor_blood_group} cannot donate to ${request.blood_group}`);
   if (!deceased) {
+    if (pledge.donor_status === 'deceased') exclusions.push('Donor is deceased and cannot make a living donation');
     if (!LIVING_ORGANS.includes(pledge.organ)) exclusions.push(`${pledge.organ} cannot come from a living donor`);
     if (!(donorAge >= 18)) exclusions.push('Living donors must be 18 or older');
   } else if (!pledge.available_at) {

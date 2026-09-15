@@ -5,6 +5,7 @@ import { hospitalRegisterSchema, verificationSchema, proposalSchema, matchDecisi
 import { HttpError, idOf, audit, notify, loadMatching } from '../util.js';
 import { evaluate, rankRecipients, rankDonors } from '../matching.js';
 import { accountView } from './account.js';
+import { reportDeceased } from '../donor-status.js';
 
 const HEALTH_FIELDS = ['operation_type', 'operation_desc', 'disease_type', 'disease_desc', 'accident_type', 'accident_desc', 'pregnant', 'menstruation'];
 const DONOR_CONTACT = ['donor_first_name', 'donor_last_name', 'donor_phone', 'donor_email'];
@@ -139,6 +140,9 @@ export function hospitalRoutes(db) {
     const donorResponse = deceased ? 'accepted' : 'pending';
     try {
       const match = await db.transaction(async (tx) => {
+        const donor = await tx.prepare('SELECT donor_status FROM users WHERE id=? FOR UPDATE').get(pledge.user_id);
+        const currentPledge = await tx.prepare('SELECT status FROM pledges WHERE id=? FOR UPDATE').get(pledge.id);
+        if (currentPledge.status !== 'active' || (!deceased && donor.donor_status === 'deceased')) throw new HttpError(409, 'The donor is no longer available for this match. Refresh the ranking.');
         const created = await tx.prepare('INSERT INTO matches(request_id,pledge_id,hospital_id,proposed_by,score,recipient_rank,breakdown,flags,override_reason,donor_response) VALUES(?,?,?,?,?,?,?::jsonb,?::jsonb,?,?) RETURNING id, donor_response')
           .get(request.id, pledge.id, req.hospital.id, req.user.id, result.score, rank, JSON.stringify(result.breakdown), JSON.stringify(result.flags), overrideReason, donorResponse);
         await audit(tx, req.user.id, 'match', created.id, 'proposed', { request_id: request.id, pledge_id: pledge.id, score: result.score, rank, competing_recipients: ranking.length, override_reason: overrideReason });
@@ -179,6 +183,8 @@ export function hospitalRoutes(db) {
     if (match.status !== 'proposed') throw new HttpError(409, 'Only proposed matches can be updated.');
     if (d.status === 'confirmed' && match.donor_response !== 'accepted') throw new HttpError(409, 'The donor has not accepted this match yet.');
     await db.transaction(async (tx) => {
+      const donor = await tx.prepare('SELECT u.donor_status, p.donor_type FROM users u JOIN pledges p ON p.user_id=u.id WHERE p.id=? FOR UPDATE OF u').get(match.pledge_id);
+      if (d.status === 'confirmed' && donor.donor_type === 'living' && donor.donor_status === 'deceased') throw new HttpError(409, 'The donor is deceased; a living match cannot be confirmed.');
       const updated = await tx.prepare(`UPDATE matches SET status=?, decision_reason=?, updated_at=now() WHERE id=? AND status='proposed'${d.status === 'confirmed' ? " AND donor_response='accepted'" : ''}`).run(d.status, d.reason, match.id);
       if (!updated.changes) throw new HttpError(409, 'This match has changed. Refresh and try again.');
       let requestClosed = false;
@@ -220,7 +226,8 @@ export function hospitalRoutes(db) {
     if (!pledge || pledge.donor_type !== 'deceased' || pledge.status !== 'active') throw new HttpError(404, 'No active deceased-donor pledge with this ID.');
     if (pledge.available_at) throw new HttpError(409, 'This pledge has already been reported available.');
     await db.transaction(async (tx) => {
-      const updated = await tx.prepare('UPDATE pledges SET available_hospital_id=?, available_at=now() WHERE id=? AND available_at IS NULL').run(req.hospital.id, pledge.id);
+      await reportDeceased(tx, pledge.user_id, req.user.id);
+      const updated = await tx.prepare("UPDATE pledges SET available_hospital_id=?, available_at=now() WHERE id=? AND available_at IS NULL AND status='active'").run(req.hospital.id, pledge.id);
       if (!updated.changes) throw new HttpError(409, 'This pledge has already been reported available.');
       await audit(tx, req.user.id, 'pledge', pledge.id, 'reported_available', { hospital_id: req.hospital.id, organ: pledge.organ });
     });

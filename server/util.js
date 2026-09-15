@@ -32,7 +32,7 @@ export async function notify(db, to, { kind, title, body = '', link = '' }) {
 
 // Everything the matching engine needs, loaded once per ranking.
 export async function loadMatching(db) {
-  const pledges = await db.prepare(`SELECT p.*, u.dob AS donor_dob, u.blood_group AS donor_blood_group,
+  const pledges = await db.prepare(`SELECT p.*, u.dob AS donor_dob, u.blood_group AS donor_blood_group, u.donor_status,
       h.name AS available_hospital_name, h.city AS available_city, h.state AS available_state
     FROM pledges p JOIN users u ON u.id=p.user_id LEFT JOIN hospitals h ON h.id=p.available_hospital_id
     WHERE p.status='active'`).all();
