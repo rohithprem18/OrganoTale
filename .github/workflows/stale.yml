@@ -1,0 +1,19 @@
+# Stale bot: once a day, reminds contributors whose pull request or assigned issue has gone quiet,
+# closes abandoned pull requests and frees up abandoned issues for someone else.
+# Shared logic: https://github.com/rohithprem18/.github/blob/main/.github/workflows/stale.yml
+name: Stale bot
+
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: read
+
+jobs:
+  stale:
+    uses: rohithprem18/.github/.github/workflows/stale.yml@main
