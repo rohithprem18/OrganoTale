@@ -7,6 +7,19 @@
     <meta name="description" content="OrganoTale — priority-based organ donor and recipient matching with verified hospitals." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>OrganoTale | Give hope. Share life.</title>
+    <script>
+      // Apply the theme before first paint to avoid a flash of the wrong palette.
+      // A stored choice (organotale-theme in localStorage) wins over the OS preference.
+      (function () {
+        var stored = null;
+        try { stored = localStorage.getItem('organotale-theme'); } catch (e) { /* storage unavailable */ }
+        var systemDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var theme = (stored === 'light' || stored === 'dark') ? stored : (systemDark ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', theme === 'dark' ? '#171511' : '#f4b942');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

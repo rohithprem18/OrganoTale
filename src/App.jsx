@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowUpRight, Bell, ChartBar, ClockCounterClockwise, HandHeart, Handshake, Heartbeat, Hospital, IdentificationCard, Kanban, List, Queue, SignOut, SquaresFour, UsersThree, X } from '@phosphor-icons/react';
 import { api } from './api';
-import { AuthContext, useAuth, Logo, Loading, Notice, ButtonLink, homeFor, useResource, ToastProvider, timeAgo, clearAllDrafts } from './components';
+import { AuthContext, useAuth, Logo, Loading, Notice, ButtonLink, homeFor, useResource, ToastProvider, timeAgo, clearAllDrafts, ThemeToggle } from './components';
+import { getStoredTheme, prefersDark, resolveTheme } from './theme';
 import { Home, FAQ, Vision, Contact, Policy } from './pages/Public';
 import { Login, Register, HospitalRegister } from './pages/Auth';
 import { Dashboard, Requests, RequestDetail, RequestForm, PledgeForm, Records, MyPledges, MyMatches } from './pages/Workspace';
@@ -32,7 +33,7 @@ function PublicLayout() {
   return <><a className="skip-link" href="#main">Skip to content</a><div className="topline"><span>A shared purpose. A second chance.</span><Link to="/faq">Learn about the journey <ArrowUpRight size={13} /></Link></div>
     <header className="site-header"><div className="nav-container"><Logo /><button className="mobile-toggle icon-button" aria-label={menu ? 'Close navigation' : 'Open navigation'} aria-expanded={menu} onClick={() => setMenu(!menu)}>{menu ? <X size={24} /> : <List size={24} />}</button>
       <nav className={menu ? 'main-nav is-open' : 'main-nav'} aria-label="Main navigation"><NavLink to="/" end>Home</NavLink><NavLink to="/vision">Our vision</NavLink><NavLink to="/hospital/register">For hospitals</NavLink><NavLink to="/faq">FAQs</NavLink><NavLink to="/contact">Contact</NavLink></nav>
-      <div className="nav-actions public-actions">{user ? <Link className="button small open-app" to={homeFor(user)}>Open app <ArrowUpRight size={17} /></Link> : <><Link className="login-link" to="/login">Log in</Link><Link className="button small" to="/register">Join the community <ArrowUpRight size={17} /></Link></>}</div>
+      <div className="nav-actions public-actions"><ThemeToggle />{user ? <Link className="button small open-app" to={homeFor(user)}>Open app <ArrowUpRight size={17} /></Link> : <><Link className="login-link" to="/login">Log in</Link><Link className="button small" to="/register">Join the community <ArrowUpRight size={17} /></Link></>}</div>
     </div></header>
     <main id="main"><Outlet /></main>
     <footer className="footer"><div className="footer-inner"><Logo /><p>Connecting people.<br />Keeping hope within reach.</p><div><Link to="/faq">FAQs</Link><Link to="/hospital/register">For hospitals</Link><Link to="/contact">Contact</Link><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} OrganoTale</span><span>Made for a more caring tomorrow.</span></div></footer>
@@ -114,7 +115,7 @@ function AppShell() {
       <header className="app-topbar">
         <button type="button" className="icon-button menu-button" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(true)}><List size={22} /></button>
         <span className="topbar-title">{current ? (current[0]) : 'OrganoTale'}</span>
-        <div className="topbar-actions"><NotificationBell /></div>
+        <div className="topbar-actions"><ThemeToggle /><NotificationBell /></div>
       </header>
       <main id="app-main" className="app-content" key={location.pathname}><Outlet /></main>
     </div>
@@ -137,6 +138,9 @@ export default function App() {
   const [user, setUser] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const load = () => { setLoading(true); setError(''); api('/auth/me').then((data) => setUser(data.user)).catch((err) => setError(err.message)).finally(() => setLoading(false)); };
   useEffect(load, []);
+  // Keep data-theme in sync with the stored choice / system preference (the
+  // inline script in index.html already did this pre-paint; this covers HMR).
+  useEffect(() => { document.documentElement.dataset.theme = resolveTheme(getStoredTheme(), prefersDark()); }, []);
   return <ToastProvider>
     {loading ? <div className="boot"><Logo /><Loading /></div>
       : error ? <div className="boot"><Logo /><Notice>{error}</Notice><button className="button" onClick={load}>Try again</button></div>

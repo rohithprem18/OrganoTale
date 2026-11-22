@@ -1,7 +1,8 @@
 import { createContext, Fragment, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, CaretDown, CaretUp, CaretUpDown, Check, CheckCircle, FloppyDisk, Heartbeat, LockSimple, MagnifyingGlass, SealCheck, WarningCircle, X } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowRight, CaretDown, CaretUp, CaretUpDown, Check, CheckCircle, FloppyDisk, Heartbeat, LockSimple, MagnifyingGlass, Moon, SealCheck, Sun, WarningCircle, X } from '@phosphor-icons/react';
 import { api } from './api';
+import { applyTheme, currentTheme, getStoredTheme, nextTheme, prefersDark, resolveTheme } from './theme';
 
 export const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -99,6 +100,24 @@ export function Empty({ title = 'Nothing here yet', children, action }) {
 export function PageHeading({ eyebrow, title, children, action }) {
   return <div className="page-heading"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{children && <p>{children}</p>}</div>{action}</div>;
 }
+// Light/dark switch for the header (issue #2). The choice is remembered in
+// localStorage; with no stored choice the OS prefers-color-scheme decides.
+export function ThemeToggle() {
+  const [theme, setTheme] = useState(() => currentTheme());
+  useEffect(() => {
+    const onSystemChange = () => { if (!getStoredTheme()) setTheme(resolveTheme(null, prefersDark())); };
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    mq?.addEventListener?.('change', onSystemChange);
+    return () => mq?.removeEventListener?.('change', onSystemChange);
+  }, []);
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  const toDark = theme !== 'dark';
+  const label = toDark ? 'Switch to dark theme' : 'Switch to light theme';
+  return <button type="button" className="icon-button theme-toggle" onClick={() => { const next = nextTheme(theme); applyTheme(next); setTheme(next); }} aria-label={label} title={label}>
+    {toDark ? <Moon size={20} /> : <Sun size={20} />}
+  </button>;
+}
+
 const STATUS_LABELS = { 'Not Emergency': 'Standard', deceased: 'After death' };
 export function Status({ value, label }) {
   const key = value || 'pending';

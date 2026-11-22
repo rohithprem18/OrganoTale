@@ -107,3 +107,62 @@ test('alive donor form lists living organs and allows a future after-death pledg
   assert.deepEqual([...host.querySelector('[name=organ]').options].map((o) => o.value).filter(Boolean), LIVING_ORGANS);
   assert.ok(host.querySelector('[name=donor_type] option[value=deceased]'));
 });
+
+test('theme helpers: a stored choice wins over the system preference, invalid values fall back', async () => {
+  const theme = await server.ssrLoadModule('/src/theme.js');
+  assert.equal(theme.resolveTheme('dark', false), 'dark');
+  assert.equal(theme.resolveTheme('light', true), 'light');
+  assert.equal(theme.resolveTheme(null, true), 'dark');
+  assert.equal(theme.resolveTheme(null, false), 'light');
+  assert.equal(theme.resolveTheme('bogus', true), 'dark');
+  assert.equal(theme.resolveTheme(undefined, false), 'light');
+  assert.equal(theme.getStoredTheme({ getItem: () => 'dark' }), 'dark');
+  assert.equal(theme.getStoredTheme({ getItem: () => 'light' }), 'light');
+  assert.equal(theme.getStoredTheme({ getItem: () => 'solarized' }), null);
+  assert.equal(theme.getStoredTheme({ getItem: () => null }), null);
+  assert.equal(theme.getStoredTheme(undefined), null);
+  assert.equal(theme.prefersDark(() => ({ matches: true })), true);
+  assert.equal(theme.prefersDark(() => ({ matches: false })), false);
+  assert.equal(theme.prefersDark(undefined), false);
+  assert.equal(theme.nextTheme('dark'), 'light');
+  assert.equal(theme.nextTheme('light'), 'dark');
+});
+
+test('theme toggle applies the stored theme and remembers each switch in localStorage', async () => {
+  const { ThemeToggle } = components;
+  const theme = await server.ssrLoadModule('/src/theme.js');
+  globalThis.matchMedia = (query) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} });
+  localStorage.setItem(theme.THEME_KEY, 'dark');
+  document.documentElement.dataset.theme = 'dark';
+  await mount(h(ThemeToggle));
+  const button = host.querySelector('button.theme-toggle');
+  assert.ok(button, 'toggle button renders');
+  assert.equal(button.getAttribute('aria-label'), 'Switch to light theme');
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  await React.act(() => button.click());
+  assert.equal(localStorage.getItem(theme.THEME_KEY), 'light');
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(button.getAttribute('aria-label'), 'Switch to dark theme');
+  await React.act(() => button.click());
+  assert.equal(localStorage.getItem(theme.THEME_KEY), 'dark');
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+});
+
+test('theme toggle falls back to the system preference when nothing is stored', async () => {
+  const { ThemeToggle } = components;
+  const theme = await server.ssrLoadModule('/src/theme.js');
+  let systemDark = true;
+  globalThis.matchMedia = (query) => ({ matches: systemDark && query.includes('dark'), media: query, addEventListener: () => {}, removeEventListener: () => {} });
+  localStorage.clear();
+  document.documentElement.dataset.theme = theme.resolveTheme(theme.getStoredTheme(), theme.prefersDark());
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  await mount(h(ThemeToggle));
+  const button = host.querySelector('button.theme-toggle');
+  assert.equal(button.getAttribute('aria-label'), 'Switch to light theme');
+  await React.act(() => button.click());
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(localStorage.getItem(theme.THEME_KEY), 'light');
+  // An explicit choice now wins even if the OS later prefers dark.
+  systemDark = true;
+  assert.equal(theme.resolveTheme(theme.getStoredTheme(), theme.prefersDark()), 'light');
+});
