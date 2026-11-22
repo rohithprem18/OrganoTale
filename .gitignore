@@ -9,5 +9,4 @@ data/
 
 # Local AI agent skills installed by the Vercel CLI
 .agents/
-.claude/
 skills-lock.json
